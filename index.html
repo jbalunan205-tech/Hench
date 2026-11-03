@@ -133,8 +133,16 @@
 
     /* Dynamic Goal Cards */
     .macro-card { transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
-    .macro-card-success { background: linear-gradient(135deg, rgba(0, 229, 153, 0.07) 0%, rgba(20, 20, 25, 0.8) 55%); border-color: rgba(0, 229, 153, 0.25); }
-    .macro-card-warning { background: linear-gradient(135deg, rgba(245, 158, 11, 0.07) 0%, rgba(20, 20, 25, 0.8) 55%); border-color: rgba(245, 158, 11, 0.25); }
+    .macro-card-success { background: linear-gradient(135deg, rgba(0, 229, 153, 0.08) 0%, rgba(20, 20, 25, 0.82) 60%); border-color: rgba(0, 229, 153, 0.35); }
+    .macro-card-warning { background: linear-gradient(135deg, rgba(245, 158, 11, 0.09) 0%, rgba(20, 20, 25, 0.82) 60%); border-color: rgba(245, 158, 11, 0.35); }
+
+    /* Compact Routines Grid */
+    .routines-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 360px));
+      gap: 1.15rem;
+      align-items: stretch;
+    }
 
     /* Today's Plan Prominent Card */
     .todays-plan-card {
@@ -658,6 +666,7 @@
     /* Tablet Adaptations */
     @media (max-width: 1100px) {
       .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .routines-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .tasks-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .tasks-calendar-layout { grid-template-columns: 1fr; }
       .progress-layout { grid-template-columns: 1fr; }
@@ -677,6 +686,7 @@
       }
       .page-title { font-size: 1.6rem; }
       .dashboard-grid { grid-template-columns: 1fr; gap: 0.85rem; }
+      .routines-cards-grid { grid-template-columns: 1fr; gap: 0.85rem; }
       .tasks-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
       .tasks-cal-cell { min-height: 68px; padding: 0.3rem; }
       .task-row { flex-direction: column; align-items: stretch; }
@@ -1086,9 +1096,7 @@
           task_categories: [...DEFAULT_TASK_CATEGORIES]
         }
       ],
-      sessions: [
-        { id: 1, user_id: 1, token: 'mock_token_12345' }
-      ],
+      sessions: [],
       meals: [],
       workouts: [],
       routines: [],
@@ -1126,8 +1134,9 @@
         } catch (e) {
           this.state = defaultDbState();
         }
-        if (!localStorage.getItem('hench_session')) {
-          localStorage.setItem('hench_session', 'mock_token_12345');
+        // Remove legacy auto-login token so unauthenticated visitors always start at the Log In / Register screen
+        if (localStorage.getItem('hench_session') === 'mock_token_12345') {
+          localStorage.removeItem('hench_session');
         }
       },
       save() {
@@ -1207,6 +1216,14 @@
         db.state.sessions = db.state.sessions.filter(s => s.token !== token);
         db.save();
         localStorage.removeItem('hench_session');
+        currentPath = '/dashboard';
+        window.mobileActiveTab = 'home';
+        savePersistedUIState();
+        try {
+          window.history.replaceState({ path: '/dashboard' }, '', '#/dashboard');
+        } catch (e) {
+          window.location.hash = '#/dashboard';
+        }
       },
 
       // --- USER GOALS & TARGETS ---
@@ -3018,7 +3035,6 @@
                       : (selectedDate > todayStr ? 'Upcoming future date' : 'No completed workouts recorded on this date')}
                   </span>
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="window.navigate('/workouts')">Log / Edit for ${selectedDate}</button>
               </div>
             </div>
             <div class="heatmap-right">
@@ -3540,7 +3556,7 @@
               <button type="button" class="btn btn-secondary btn-sm" onclick="window.openRoutineEditorModal(${r.id}, true)">+ Add Exercise</button>
               <div style="display:flex; gap:0.55rem;">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
-                <button type="button" class="btn btn-primary btn-sm" onclick="closeModal(); window.openQuickScheduleModal('${getLocalDateStr()}', '${escapeHtml(r.name).replace(/'/g, "\\'")}', '${r.estimated_duration || ''}')">Start / Schedule</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="closeModal(); window.openQuickScheduleModal('${getLocalDateStr()}', '${escapeHtml(r.name).replace(/'/g, "\\'")}', '${r.estimated_duration || ''}')">Start Workout</button>
               </div>
             </div>
           </div>
@@ -3548,43 +3564,111 @@
       `;
     };
 
+    window.renderRoutineExercisesPreview = () => {
+      const container = document.getElementById('routine-exercises-preview');
+      if (!container) return;
+      container.innerHTML = (window.tempRoutineExercises || []).map((ex, idx) => `
+        <div style="background:var(--bg-input); padding:0.8rem 1rem; border-radius:12px; display:flex; justify-content:space-between; align-items:center; border: 1px solid var(--border-color);">
+          <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${ex.sets||0} sets &times; ${ex.reps||0} reps @ ${ex.weight||0} lbs</span></div>
+          <button type="button" style="background:transparent; border:none; color:var(--color-danger); cursor:pointer; font-size:1.2rem; line-height:1;" onclick="window.removeRoutineExercise(${idx})" aria-label="Remove exercise">&times;</button>
+        </div>
+      `).join('');
+    };
+
+    window.addRoutineExercise = () => {
+      const nEl = document.getElementById('add-ex-name');
+      if (!nEl) return;
+      const n = nEl.value.trim();
+      if (!n) return showToast('Exercise name required.', 'error');
+      window.tempRoutineExercises = window.tempRoutineExercises || [];
+      window.tempRoutineExercises.push({
+        name: n,
+        sets: parseOptionalNumber(document.getElementById('add-ex-sets').value) || 3,
+        reps: parseOptionalNumber(document.getElementById('add-ex-reps').value) || 10,
+        weight: parseOptionalNumber(document.getElementById('add-ex-weight').value, true) || 0
+      });
+      nEl.value = '';
+      document.getElementById('add-ex-sets').value = '';
+      document.getElementById('add-ex-reps').value = '';
+      document.getElementById('add-ex-weight').value = '';
+      window.renderRoutineExercisesPreview();
+    };
+
+    window.removeRoutineExercise = (idx) => {
+      window.tempRoutineExercises = window.tempRoutineExercises || [];
+      window.tempRoutineExercises.splice(idx, 1);
+      window.renderRoutineExercisesPreview();
+    };
+
     async function renderRoutines() {
       const routines = await api.getRoutines();
+      window.tempRoutineExercises = window.tempRoutineExercises || [];
       return `
         <div class="page-header animate-fade-in">
           <div>
             <h1 class="page-title">Routines</h1>
             <p class="page-subtitle">Build and manage your workout plans. Changes to templates never overwrite historical workout logs.</p>
           </div>
-          <button class="btn btn-primary" onclick="window.openRoutineEditorModal()">+ Create Routine</button>
         </div>
-        
-        <div class="dashboard-grid animate-fade-in" style="animation-delay:0.1s; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));">
-          ${routines.length ? routines.map(r => `
-            <div class="card" style="cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; gap:1.15rem; padding:1.25rem 1.4rem;" onclick="window.openRoutineDetailModal(${r.id})">
-              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem;">
-                <h3 style="font-size:1.15rem; font-weight:800; margin:0; line-height:1.3; font-family:var(--font-display); word-break:break-word; color:var(--text-white);">${escapeHtml(r.name)}</h3>
-                <button type="button" aria-label="Delete Routine" style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.2); color:var(--color-danger); border-radius:8px; padding:0.3rem 0.5rem; font-size:0.75rem; font-weight:700; cursor:pointer; flex-shrink:0; transition:var(--transition);" onclick="event.stopPropagation(); window.handleDeleteRoutine(${r.id})" onmouseover="this.style.background='var(--color-danger)'; this.style.color='#fff'" onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'; this.style.color='var(--color-danger)'">
-                  Delete
-                </button>
+
+        <!-- Create Routine Card (Inside Card CTA Retained) -->
+        <div class="card animate-fade-in" style="animation-delay:0.05s;">
+          <div class="card-title">Create New Routine</div>
+          <form id="routine-form">
+            <div class="form-row">
+              <div class="form-group" style="flex:2;">
+                <div class="form-label-wrap"><label for="r-name">Routine Name <span class="label-required">*</span></label></div>
+                <input type="text" id="r-name" placeholder="e.g., Push Hypertrophy, Upper Body Power" required />
               </div>
-              <div style="color:var(--text-muted); font-size:0.85rem; display:flex; flex-direction:column; gap:0.4rem;">
-                <span style="display:flex; align-items:center; gap:0.5rem;">
-                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="opacity:0.75;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                   <span style="font-weight:600; color:var(--text-white);">${r.exercises ? r.exercises.length : 0}</span> exercises
-                </span>
-                ${r.estimated_duration ? `
-                <span style="display:flex; align-items:center; gap:0.5rem;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="opacity:0.75;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                  <span style="font-weight:600; color:var(--text-white);">~${r.estimated_duration}</span> min est. duration
-                </span>` : ''}
-              </div>
-              <div style="display:flex; gap:0.6rem; margin-top:0.25rem;">
-                <button type="button" class="btn btn-primary btn-sm" style="flex:1.5;" onclick="event.stopPropagation(); window.openQuickScheduleModal('${getLocalDateStr()}', '${escapeHtml(r.name).replace(/'/g, "\\'")}', '${r.estimated_duration || ''}')">Start</button>
-                <button type="button" class="btn btn-secondary btn-sm" style="flex:1;" onclick="event.stopPropagation(); window.openRoutineEditorModal(${r.id})">Edit</button>
+              <div class="form-group" style="flex:1;">
+                <div class="form-label-wrap"><label for="r-est-duration">Estimated Duration (min)</label><span class="label-optional">(Optional)</span></div>
+                <input type="number" id="r-est-duration" min="5" placeholder="e.g., 60" />
               </div>
             </div>
-          `).join('') : '<div class="card" style="grid-column: 1 / -1; text-align:center; padding:3.5rem 2rem; border-style:dashed;"><p style="color:var(--text-white); font-weight:700; font-size:1.1rem; margin-bottom:0.4rem;">No routines created yet.</p><p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.25rem;">Build your first workout template to save time logging exercises.</p><button type="button" class="btn btn-primary" onclick="window.openRoutineEditorModal()">+ Create Routine</button></div>'}
+            <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: 1.1rem; margin-top: 0.4rem;">
+              <div class="form-label-wrap" style="margin-bottom:0.75rem;"><label>Add Exercises to Routine</label><span class="label-optional">(Optional — you can also add exercises later)</span></div>
+              <div id="routine-exercises-preview" style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.85rem;">
+                ${window.tempRoutineExercises.map((ex, idx) => `
+                  <div style="background:var(--bg-input); padding:0.8rem 1rem; border-radius:12px; display:flex; justify-content:space-between; align-items:center; border: 1px solid var(--border-color);">
+                    <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${ex.sets||0} sets &times; ${ex.reps||0} reps @ ${ex.weight||0} lbs</span></div>
+                    <button type="button" style="background:transparent; border:none; color:var(--color-danger); cursor:pointer; font-size:1.2rem; line-height:1;" onclick="window.removeRoutineExercise(${idx})" aria-label="Remove exercise">&times;</button>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="form-row" style="align-items:flex-end; background:var(--bg-input); padding:1rem; border-radius:14px; border:1px solid var(--border-color);">
+                <div class="form-group" style="flex:2; margin-bottom:0;"><label for="add-ex-name">Exercise Name</label><input type="text" id="add-ex-name" placeholder="e.g., Barbell Bench Press" /></div>
+                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-sets">Sets</label><input type="number" id="add-ex-sets" min="1" placeholder="3" /></div>
+                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-reps">Reps</label><input type="number" id="add-ex-reps" min="1" placeholder="10" /></div>
+                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-weight">Lbs</label><input type="number" id="add-ex-weight" min="0" step="0.5" placeholder="135" /></div>
+                <button type="button" class="btn btn-secondary" onclick="window.addRoutineExercise()" style="margin-bottom:0; height:44px;">+ Add</button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">+ Create Routine</button>
+          </form>
+        </div>
+        
+        <div class="routines-cards-grid animate-fade-in" style="animation-delay:0.1s;">
+          ${routines.length ? routines.map(r => {
+            const totalSets = (r.exercises || []).reduce((acc, ex) => acc + (Number(ex.sets) || 0), 0);
+            return `
+            <div class="card" style="cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; gap:1rem; padding:1.25rem 1.4rem;" onclick="window.openRoutineDetailModal(${r.id})">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem;">
+                <h3 style="font-size:1.15rem; font-weight:800; margin:0; line-height:1.3; font-family:var(--font-display); word-break:break-word; color:var(--text-white); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${escapeHtml(r.name)}</h3>
+                <button type="button" aria-label="Delete routine" title="Delete routine" style="background:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.28); color:var(--color-danger); border-radius:8px; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; font-size:1.1rem; font-weight:700; cursor:pointer; flex-shrink:0; transition:var(--transition);" onclick="event.stopPropagation(); window.handleDeleteRoutine(${r.id})" onmouseover="this.style.background='var(--color-danger)'; this.style.color='#fff'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'; this.style.color='var(--color-danger)'">
+                  &times;
+                </button>
+              </div>
+              <div style="color:var(--text-muted); font-size:0.84rem; display:flex; flex-wrap:wrap; gap:0.65rem;">
+                <span><strong style="color:var(--text-white);">${r.exercises ? r.exercises.length : 0}</strong> exercises</span>
+                <span>&bull; <strong style="color:var(--text-white);">${totalSets}</strong> sets</span>
+                ${r.estimated_duration ? `<span>&bull; <strong style="color:var(--text-white);">~${r.estimated_duration}m</strong></span>` : ''}
+              </div>
+              <div style="display:flex; gap:0.55rem; margin-top:0.2rem;">
+                <button type="button" class="btn btn-primary btn-sm" style="flex:1.4;" onclick="event.stopPropagation(); window.openQuickScheduleModal('${getLocalDateStr()}', '${escapeHtml(r.name).replace(/'/g, "\\'")}', '${r.estimated_duration || ''}')">Start Routine</button>
+                <button type="button" class="btn btn-secondary btn-sm" style="flex:1;" onclick="event.stopPropagation(); window.openRoutineEditorModal(${r.id}, true)">+ Exercise</button>
+              </div>
+            </div>
+          `;}).join('') : '<div class="card" style="grid-column: 1 / -1; text-align:center; padding:2.5rem 1.5rem; border-style:dashed;"><p style="color:var(--text-white); font-weight:700; font-size:1.05rem; margin-bottom:0.35rem;">No saved routines yet.</p><p style="color:var(--text-muted); font-size:0.88rem;">Use the Create New Routine card above to save your first workout split.</p></div>'}
         </div>
       `;
     }
@@ -4417,7 +4501,6 @@
           </div>
           <div style="display:flex; align-items:center; gap:0.55rem; flex-wrap:wrap;">
             <button type="button" class="btn btn-secondary btn-sm" onclick="window.openManageTaskCategoriesModal()">Lists & Categories</button>
-            <button type="button" class="btn btn-primary" onclick="window.openTaskModal(null, '${subView === 'calendar' || subView === 'today' ? selectedDate : todayStr}')">+ Add Task</button>
           </div>
         </div>
 
@@ -4530,7 +4613,6 @@
       return `
         <div class="page-header animate-fade-in">
           <div><h1 class="page-title">Account</h1><p class="page-subtitle">Manage your personal profile and daily fitness targets.</p></div>
-          <button class="btn btn-primary btn-sm" onclick="window.openGoalsModal()">Edit Goals & Targets</button>
         </div>
         <div class="card animate-fade-in" style="animation-delay:0.1s; display:flex; flex-direction:column; align-items:center; text-align:center; padding: 3rem 2rem;">
           <div style="width:110px; height:110px; border-radius:50%; background:var(--bg-input); border:2px solid var(--border-color); display:flex; align-items:center; justify-content:center; margin-bottom:1.25rem; color:var(--color-primary); box-shadow: 0 0 30px var(--color-primary-dim);">
@@ -4557,6 +4639,7 @@
               </div>
             </div>
           </div>
+          <button type="button" class="btn btn-danger" style="margin-top:1.5rem; min-width:200px;" onclick="api.logout().then(() => renderApp({ isRouteChange: true }))">Sign Out</button>
         </div>
       `;
     }
@@ -4564,11 +4647,11 @@
     function getAuthFormHTML(isRegister) {
       return `
         <form onsubmit="event.preventDefault(); window.handleAuth(${isRegister})">
-          <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Username</label><input type="text" id="auth-username" required /></div>
-          <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Password</label><input type="password" id="auth-password" required /></div>
-          ${isRegister ? `<div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Confirm Password</label><input type="password" id="auth-confirm" required /></div>` : ''}
+          <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Username or Email</label><input type="text" id="auth-username" placeholder="${isRegister ? 'Choose a username' : 'Enter your username or email'}" required /></div>
+          <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Password</label><input type="password" id="auth-password" placeholder="${isRegister ? 'At least 6 characters' : 'Enter your password'}" required /></div>
+          ${isRegister ? `<div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Confirm Password</label><input type="password" id="auth-confirm" placeholder="Re-enter your password" required /></div>` : ''}
           <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; margin-top:1rem; font-size:1rem;">${isRegister ? 'Create Account' : 'Sign In'}</button>
-          <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.5rem;">By John Balunan</div>
+          <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.25rem;">By John Balunan</div>
         </form>
       `;
     }
@@ -4593,8 +4676,15 @@
           } else {
             await api.login(u, p);
           }
+          currentPath = '/dashboard';
+          window.mobileActiveTab = 'home';
           window.dashboardSelectedDate = getLocalDateStr();
           savePersistedUIState();
+          try {
+            window.history.replaceState({ path: '/dashboard' }, '', '#/dashboard');
+          } catch (e) {
+            window.location.hash = '#/dashboard';
+          }
           await renderApp({ isRouteChange: true, preserveScroll: false });
         } catch (e) {
           showToast(e.message, 'error');
@@ -4926,7 +5016,7 @@
       await api.deleteRoutine(id);
       showToast('Routine template deleted.');
       renderApp({ isRouteChange: false, preserveScroll: true });
-    });
+    }, 'Delete Routine');
 
     // --- Routine Checklist Exercise Toggle (Used in Calendar Event Manager & Checklist Mode) ---
     window.toggleRoutineExercise = async (checkbox) => {
@@ -5827,33 +5917,17 @@
 
     window.handleMobileQuickAction = async (actionType) => {
       window.closeMobileQuickActions();
-      if (actionType === 'workout') {
-        window.navigate('/workouts', { mobileTab: 'workouts' });
-        setTimeout(() => {
-          const inp = document.getElementById('w-name');
-          if (inp) {
-            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            inp.focus();
-          }
-        }, 120);
-      } else if (actionType === 'nutrition') {
-        window.navigate('/nutrition', { mobileTab: 'food' });
-        setTimeout(() => {
-          const inp = document.getElementById('m-name');
-          if (inp) {
-            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            inp.focus();
-          }
-        }, 120);
-      } else if (actionType === 'routine') {
+      if (actionType === 'routine') {
         if (currentPath !== '/routines') {
           window.navigate('/routines', { mobileTab: 'workouts' });
         }
         setTimeout(() => {
-          if (typeof window.openRoutineEditorModal === 'function') {
-            window.openRoutineEditorModal();
+          const inp = document.getElementById('r-name');
+          if (inp) {
+            inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            inp.focus();
           }
-        }, 80);
+        }, 100);
       } else if (actionType === 'task') {
         window.navigate('/tasks');
         setTimeout(() => {
@@ -5867,6 +5941,10 @@
         if (typeof window.openGoalsModal === 'function') {
           window.openGoalsModal();
         }
+      } else if (actionType === 'calendar') {
+        window.navigate('/calendar', { mobileTab: 'notifications' });
+      } else if (actionType === 'account') {
+        window.navigate('/account');
       }
     };
 
@@ -5918,12 +5996,6 @@
             <div id="mobile-quick-actions-backdrop" class="mobile-quick-actions-backdrop" onclick="window.closeMobileQuickActions()"></div>
             <nav id="mobile-nav-dock" class="mobile-nav-dock-root" aria-label="Mobile Navigation">
               <div id="mobile-quick-actions-panel" class="mobile-quick-actions-panel" role="menu" aria-label="Quick Actions" onclick="event.stopPropagation()">
-                <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('workout')">
-                  <span class="mobile-quick-action-title">Log a Workout</span>
-                </button>
-                <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('nutrition')">
-                  <span class="mobile-quick-action-title">Log Nutrition</span>
-                </button>
                 <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('routine')">
                   <span class="mobile-quick-action-title">Create Routine</span>
                 </button>
@@ -5932,6 +6004,12 @@
                 </button>
                 <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('goals')">
                   <span class="mobile-quick-action-title">Set a Goal and Target</span>
+                </button>
+                <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('calendar')">
+                  <span class="mobile-quick-action-title">Calendar</span>
+                </button>
+                <button type="button" class="mobile-quick-action-card" role="menuitem" onclick="window.handleMobileQuickAction('account')">
+                  <span class="mobile-quick-action-title">Account</span>
                 </button>
               </div>
 
