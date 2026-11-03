@@ -6259,3 +6259,22 @@
   </script>
 </body>
 </html>
+
+<script type="module">
+const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+const cloud = createClient('https://cpxdahjmqqsafhtwjqhf.supabase.co','sb_publishable_mMBZAy4F_3Nt7n3HaLEDrA_NqISlft1');
+let cloudUser = null, cloudTimer;
+const localSave = db.save.bind(db);
+db.getAuthenticatedUser = () => cloudUser;
+db.save = () => { localSave(); if (cloudUser) { clearTimeout(cloudTimer); cloudTimer = setTimeout(async () => { const { error } = await cloud.from('hench_user_data').upsert({ user_id: cloudUser.id, state: db.state, updated_at: new Date().toISOString() }); if (error) console.error('Cloud sync failed', error); }, 350); } };
+async function hydrateCloud(session) {
+  const u = session.user; cloudUser = { id:u.id, name:u.user_metadata?.name || u.email.split('@')[0], email:u.email, created_at:u.created_at, targets:{calories:null,protein:null,carbs:null,fat:null,weekly_workouts:null}, task_categories:[...DEFAULT_TASK_CATEGORIES] };
+  const { data } = await cloud.from('hench_user_data').select('state').eq('user_id',u.id).maybeSingle();
+  if (data?.state) db.state = data.state; else { db.state = defaultDbState(); db.state.users=[]; db.state.meals=[]; db.state.workouts=[]; db.state.routines=[]; db.state.events=[]; db.state.tasks=[]; db.save(); }
+  db.state.users=[cloudUser]; db.state.sessions=[{id:1,user_id:u.id,token:'cloud'}]; localStorage.setItem('hench_session','cloud'); localSave();
+}
+api.login = async (email,password) => { const {data,error}=await cloud.auth.signInWithPassword({email:email.trim(),password}); if(error) throw error; await hydrateCloud(data.session); return {success:true}; };
+api.register = async (email,password) => { if(!email.includes('@')) throw new Error('Use an email address to register.'); const {data,error}=await cloud.auth.signUp({email:email.trim(),password,options:{data:{name:email.split('@')[0]}}}); if(error) throw error; if(!data.session) throw new Error('Check your email to confirm your account, then log in.'); await hydrateCloud(data.session); return {success:true}; };
+api.logout = async () => { await cloud.auth.signOut(); cloudUser=null; localStorage.removeItem('hench_session'); renderApp({isRouteChange:true}); };
+const existing = (await cloud.auth.getSession()).data.session; if(existing){ await hydrateCloud(existing); renderApp({isRouteChange:false,preserveScroll:false}); }
+</script>
