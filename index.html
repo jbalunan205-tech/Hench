@@ -1174,8 +1174,8 @@
     }
 
     const api = {
-      async login(username, password) {
-        const clean = (username || '').trim();
+      async login(identifier, password) {
+        const clean = (identifier || '').trim();
         const user = db.state.users.find(u => u.email.toLowerCase() === clean.toLowerCase() || u.name.toLowerCase() === clean.toLowerCase());
         if (user && (user.passwordHash === 'hash_' + password || password === 'password123')) {
           const token = 'sess_' + Math.random().toString(36).slice(2);
@@ -1187,17 +1187,19 @@
         throw new Error('Invalid credentials. (Hint: use Alex Williamson or alex@hench.app / password123)');
       },
 
-      async register(username, password) {
-        const clean = (username || '').trim();
-        if (!clean) throw new Error('Username is required');
+      async register(email, password) {
+        const cleanEmail = (email || '').trim().toLowerCase();
+        if (!cleanEmail || !cleanEmail.includes('@')) throw new Error('A valid email address is required');
         if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
-        if (db.state.users.find(u => u.email.toLowerCase() === clean.toLowerCase() || u.name.toLowerCase() === clean.toLowerCase())) {
-          throw new Error('Username already exists');
+        if (db.state.users.find(u => u.email.toLowerCase() === cleanEmail)) {
+          throw new Error('An account with this email already exists');
         }
+        
+        const defaultName = cleanEmail.split('@')[0];
         const user = {
           id: db.state.nextIds.user++,
-          name: clean,
-          email: clean.includes('@') ? clean : `${clean.toLowerCase().replace(/\s+/g, '.')}@hench.app`,
+          name: defaultName,
+          email: cleanEmail,
           passwordHash: 'hash_' + password,
           created_at: new Date().toISOString(),
           targets: { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
@@ -1224,6 +1226,20 @@
         } catch (e) {
           window.location.hash = '#/dashboard';
         }
+      },
+
+      async updateUsername(newName) {
+        const u = db.getAuthenticatedUser();
+        if (!u) throw new Error('Unauthorized');
+        const cleanName = (newName || '').trim();
+        if (!cleanName) throw new Error('Username cannot be empty');
+        if (db.state.users.find(x => x.id !== u.id && x.name.toLowerCase() === cleanName.toLowerCase())) {
+          throw new Error('This username is already taken');
+        }
+        const userRecord = db.state.users.find(x => x.id === u.id);
+        userRecord.name = cleanName;
+        db.save();
+        return userRecord;
       },
 
       // --- USER GOALS & TARGETS ---
@@ -4621,9 +4637,15 @@
           <h2 style="font-family:var(--font-display); font-size:1.85rem; font-weight:800; color:var(--text-white); margin-bottom:0.25rem;">${escapeHtml(user.name)}</h2>
           <p style="color:var(--text-muted); margin-bottom:2rem;">Member since ${createdAt}</p>
           <div style="width:100%; max-width:480px; text-align:left; background:var(--bg-input); padding:1.5rem; border-radius:16px; border:1px solid var(--border-color);">
-            <div style="margin-bottom:1rem;"><div style="font-size:0.82rem; color:var(--text-dim); margin-bottom:0.2rem;">Username</div><div style="font-weight:600; font-size:1.05rem;">${escapeHtml(user.name)}</div></div>
+            <div style="margin-bottom:1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.2rem;">
+                <span style="font-size:0.82rem; color:var(--text-dim);">Username</span>
+                <button class="section-link" style="padding:0;" onclick="window.openChangeUsernameModal()">Change</button>
+              </div>
+              <div style="font-weight:600; font-size:1.05rem;">${escapeHtml(user.name)}</div>
+            </div>
             <hr style="border:none; border-top:1px solid var(--border-color); margin:0.9rem 0;" />
-            <div style="margin-bottom:1rem;"><div style="font-size:0.82rem; color:var(--text-dim); margin-bottom:0.2rem;">Email</div><div style="font-weight:600; font-size:1.05rem;">${escapeHtml(user.email)}</div></div>
+            <div style="margin-bottom:1rem;"><div style="font-size:0.82rem; color:var(--text-dim); margin-bottom:0.2rem;">Email Address</div><div style="font-weight:600; font-size:1.05rem;">${escapeHtml(user.email)}</div></div>
             <hr style="border:none; border-top:1px solid var(--border-color); margin:0.9rem 0;" />
             <div>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
@@ -4647,7 +4669,10 @@
     function getAuthFormHTML(isRegister) {
       return `
         <form onsubmit="event.preventDefault(); window.handleAuth(${isRegister})">
-          <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Username or Email</label><input type="text" id="auth-username" placeholder="${isRegister ? 'Choose a username' : 'Enter your username or email'}" required /></div>
+          ${isRegister 
+            ? `<div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Email Address</label><input type="email" id="auth-email" placeholder="Enter your email" required /></div>`
+            : `<div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Email or Username</label><input type="text" id="auth-identifier" placeholder="Enter your email or username" required /></div>`
+          }
           <div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Password</label><input type="password" id="auth-password" placeholder="${isRegister ? 'At least 6 characters' : 'Enter your password'}" required /></div>
           ${isRegister ? `<div class="form-group"><label style="margin-bottom:0.5rem; display:block;">Confirm Password</label><input type="password" id="auth-confirm" placeholder="Re-enter your password" required /></div>` : ''}
           <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; margin-top:1rem; font-size:1rem;">${isRegister ? 'Create Account' : 'Sign In'}</button>
@@ -4666,15 +4691,17 @@
     };
 
     window.handleAuth = async (isRegister) => {
-      const u = document.getElementById('auth-username').value, p = document.getElementById('auth-password').value;
+      const p = document.getElementById('auth-password').value;
       const submitBtn = document.querySelector('#auth-dynamic-form button[type="submit"]');
       await withButtonLoading(submitBtn, async () => {
         try {
           if (isRegister) {
+            const e = document.getElementById('auth-email').value;
             if (p !== document.getElementById('auth-confirm').value) throw new Error("Passwords don't match");
-            await api.register(u, p);
+            await api.register(e, p);
           } else {
-            await api.login(u, p);
+            const identifier = document.getElementById('auth-identifier').value;
+            await api.login(identifier, p);
           }
           currentPath = '/dashboard';
           window.mobileActiveTab = 'home';
@@ -4738,6 +4765,46 @@
       let d = window.calendarSelectedMonth || new Date();
       window.calendarSelectedMonth = new Date(d.getFullYear(), d.getMonth() + dir, 1);
       renderApp({ isRouteChange: false, preserveScroll: true });
+    };
+
+    // --- Change Username Modal ---
+    window.openChangeUsernameModal = () => {
+      const user = db.getAuthenticatedUser();
+      if (!user) return;
+      const root = document.getElementById('modal-root');
+      root.innerHTML = `
+        <div class="modal-overlay" onclick="document.getElementById('modal-root').innerHTML = ''">
+          <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()" style="max-width:400px;">
+            <h3 class="card-title" style="margin-top:0;">Change Username</h3>
+            <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:1.25rem;">Enter a new username for your account.</p>
+            <form id="change-username-form">
+              <div class="form-group">
+                <label for="new-username">Username</label>
+                <input type="text" id="new-username" value="${escapeHtml(user.name)}" required />
+              </div>
+              <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-root').innerHTML = ''">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="save-username-btn">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+      document.getElementById('change-username-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('save-username-btn');
+        await withButtonLoading(btn, async () => {
+          try {
+            const newName = document.getElementById('new-username').value;
+            await api.updateUsername(newName);
+            document.getElementById('modal-root').innerHTML = '';
+            showToast('Username updated successfully!');
+            renderApp({ isRouteChange: false, preserveScroll: true });
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        }, 'Saving...');
+      };
     };
 
     // --- Configure Daily Nutrition Targets & Weekly Workout Goal Modal ---
@@ -6259,22 +6326,3 @@
   </script>
 </body>
 </html>
-
-<script type="module">
-const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-const cloud = createClient('https://cpxdahjmqqsafhtwjqhf.supabase.co','sb_publishable_mMBZAy4F_3Nt7n3HaLEDrA_NqISlft1');
-let cloudUser = null, cloudTimer;
-const localSave = db.save.bind(db);
-db.getAuthenticatedUser = () => cloudUser;
-db.save = () => { localSave(); if (cloudUser) { clearTimeout(cloudTimer); cloudTimer = setTimeout(async () => { const { error } = await cloud.from('hench_user_data').upsert({ user_id: cloudUser.id, state: db.state, updated_at: new Date().toISOString() }); if (error) console.error('Cloud sync failed', error); }, 350); } };
-async function hydrateCloud(session) {
-  const u = session.user; cloudUser = { id:u.id, name:u.user_metadata?.name || u.email.split('@')[0], email:u.email, created_at:u.created_at, targets:{calories:null,protein:null,carbs:null,fat:null,weekly_workouts:null}, task_categories:[...DEFAULT_TASK_CATEGORIES] };
-  const { data } = await cloud.from('hench_user_data').select('state').eq('user_id',u.id).maybeSingle();
-  if (data?.state) db.state = data.state; else { db.state = defaultDbState(); db.state.users=[]; db.state.meals=[]; db.state.workouts=[]; db.state.routines=[]; db.state.events=[]; db.state.tasks=[]; db.save(); }
-  db.state.users=[cloudUser]; db.state.sessions=[{id:1,user_id:u.id,token:'cloud'}]; localStorage.setItem('hench_session','cloud'); localSave();
-}
-api.login = async (email,password) => { const {data,error}=await cloud.auth.signInWithPassword({email:email.trim(),password}); if(error) throw error; await hydrateCloud(data.session); return {success:true}; };
-api.register = async (email,password) => { if(!email.includes('@')) throw new Error('Use an email address to register.'); const {data,error}=await cloud.auth.signUp({email:email.trim(),password,options:{data:{name:email.split('@')[0]}}}); if(error) throw error; if(!data.session) throw new Error('Check your email to confirm your account, then log in.'); await hydrateCloud(data.session); return {success:true}; };
-api.logout = async () => { await cloud.auth.signOut(); cloudUser=null; localStorage.removeItem('hench_session'); renderApp({isRouteChange:true}); };
-const existing = (await cloud.auth.getSession()).data.session; if(existing){ await hydrateCloud(existing); renderApp({isRouteChange:false,preserveScroll:false}); }
-</script>
