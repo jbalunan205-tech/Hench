@@ -6460,32 +6460,39 @@
 
     renderApp({ isRouteChange: false, preserveScroll: false });
   </script>
-</body>
-</html>
-
-
 <script>
 // Supabase authentication and cross-device data sync.
 (async () => {
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
   const cloud = createClient('https://cpxdahjmqqsafhtwjqhf.supabase.co', 'sb_publishable_mMBZAy4F_3Nt7n3HaLEDrA_NqISlft1');
   let cloudUser = null;
-  let saveTimer = null;
   const localSave = db.save.bind(db);
+  let pendingCloudSave = Promise.resolve();
+
+  // Send each change to Supabase immediately. A delayed save can be cancelled
+  // when a user refreshes, closes the tab, or signs out straight after editing.
+  async function syncCloudState() {
+    if (!cloudUser) return;
+    // Queue writes so a slower earlier request can never overwrite a newer one.
+    pendingCloudSave = pendingCloudSave.catch(() => undefined).then(() =>
+      cloud.from('hench_user_data').upsert({
+        user_id: cloudUser.id,
+        state: db.state,
+        updated_at: new Date().toISOString()
+      })
+    );
+    const { error } = await pendingCloudSave;
+    if (error) {
+      console.error('Cloud sync failed:', error);
+      throw error;
+    }
+  }
 
   db.getAuthenticatedUser = () => cloudUser;
   db.save = () => {
     localSave();
     if (!cloudUser) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const { error } = await cloud.from('hench_user_data').upsert({
-        user_id: cloudUser.id,
-        state: db.state,
-        updated_at: new Date().toISOString()
-      });
-      if (error) console.error('Cloud sync failed:', error);
-    }, 350);
+    syncCloudState().catch(error => console.error('Cloud sync failed:', error));
   };
 
   async function loadCloudState(session) {
@@ -6531,6 +6538,8 @@
     return { success: true };
   };
   api.logout = async () => {
+    // Do not discard a just-entered change when the user signs out.
+    await syncCloudState().catch(error => console.error('Final cloud sync failed:', error));
     await cloud.auth.signOut();
     cloudUser = null;
     localStorage.removeItem('hench_session');
@@ -6545,3 +6554,5 @@
   }
 })().catch(error => console.error('Cloud startup failed:', error));
 </script>
+</body>
+</html>
