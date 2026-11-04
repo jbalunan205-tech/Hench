@@ -1156,6 +1156,40 @@
         .replace(/'/g, '&#39;');
     }
 
+    function formatExerciseSummary(ex) {
+      if (!ex) return '';
+      const sets = Number(ex.sets) || 0;
+      const reps = Number(ex.reps) || 0;
+      const weight = Number(ex.weight) || 0;
+      const steps = Number(ex.steps) || 0;
+      const parts = [];
+      if (sets > 0 || reps > 0 || weight > 0) {
+        parts.push(`${sets} sets × ${reps} reps @ ${weight} lbs`);
+      }
+      if (steps > 0) {
+        parts.push(`${steps.toLocaleString()} steps`);
+      }
+      if (parts.length === 0) return '0 sets × 0 reps @ 0 lbs';
+      return parts.join(' • ');
+    }
+
+    function formatExerciseCompact(ex) {
+      if (!ex) return '';
+      const sets = Number(ex.sets) || 0;
+      const reps = Number(ex.reps) || 0;
+      const weight = Number(ex.weight) || 0;
+      const steps = Number(ex.steps) || 0;
+      const parts = [];
+      if (sets > 0 || reps > 0 || weight > 0) {
+        parts.push(`${sets}×${reps}${weight > 0 ? ` @ ${weight}lbs` : ''}`);
+      }
+      if (steps > 0) {
+        parts.push(`${steps.toLocaleString()} steps`);
+      }
+      if (parts.length === 0) return '0×0 @ 0lbs';
+      return parts.join(' • ');
+    }
+
     // =========================================================================
     // PERSISTENT DATABASE LAYER (Synchronized with localStorage)
     // =========================================================================
@@ -1383,6 +1417,25 @@
         return safeCount;
       },
 
+      async adjustStepsDelta(date, delta) {
+        const u = db.getAuthenticatedUser();
+        if (!u) return null;
+        const stepDelta = parseInt(delta, 10) || 0;
+        if (stepDelta === 0) return null;
+        if (!db.state.steps_log) db.state.steps_log = [];
+        let log = db.state.steps_log.find(s => s.user_id === u.id && s.date === date);
+        const prevCount = log ? (Number(log.count) || 0) : 0;
+        const newCount = Math.max(0, prevCount + stepDelta);
+        if (log) {
+          log.count = newCount;
+        } else {
+          db.state.steps_log.push({ user_id: u.id, date, count: newCount });
+        }
+        db.save();
+        const target = (u.targets && Number(u.targets.steps) > 0) ? Number(u.targets.steps) : 10000;
+        return { prevCount, newCount, target, crossedGoal: prevCount < target && newCount >= target };
+      },
+
       async getMeals() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1449,6 +1502,21 @@
           .sort((a, b) => (b.date || '').localeCompare(a.date || '') || new Date(b.created_at) - new Date(a.created_at));
       },
 
+      async adjustDailySteps(userId, dateStr, deltaSteps) {
+        const delta = parseInt(deltaSteps, 10) || 0;
+        if (!dateStr || delta === 0) return null;
+        if (!db.state.steps_log) db.state.steps_log = [];
+        let log = db.state.steps_log.find(s => s.user_id === userId && s.date === dateStr);
+        const prevCount = log ? (parseInt(log.count, 10) || 0) : 0;
+        const nextCount = Math.max(0, prevCount + delta);
+        if (log) {
+          log.count = nextCount;
+        } else if (nextCount > 0) {
+          db.state.steps_log.push({ user_id: userId, date: dateStr, count: nextCount });
+        }
+        return { prevCount, nextCount };
+      },
+
       async createWorkout(data) {
         const u = db.getAuthenticatedUser();
         if (!u) throw new Error('Unauthorized');
@@ -1456,6 +1524,7 @@
         if (!name) throw new Error('Exercise / Workout Name is required');
 
         const dateStr = data.date || getLocalDateStr();
+        const stepsCount = parseOptionalNumber(data.steps);
         const workout = {
           id: db.state.nextIds.workout++,
           user_id: u.id,
@@ -1463,6 +1532,7 @@
           sets: parseOptionalNumber(data.sets),
           reps: parseOptionalNumber(data.reps),
           weight: parseOptionalNumber(data.weight, true),
+          steps: stepsCount,
           duration_minutes: parseOptionalNumber(data.duration_minutes),
           event_id: data.event_id || null,
           date: dateStr,
@@ -1470,7 +1540,13 @@
         };
         db.state.workouts.unshift(workout);
         this.syncEventsWithWorkouts(u.id, dateStr);
+        let stepGoalReached = false;
+        if (stepsCount && stepsCount > 0) {
+          const stepRes = await this.adjustStepsDelta(dateStr, stepsCount);
+          if (stepRes && stepRes.crossedGoal) stepGoalReached = true;
+        }
         db.save();
+        workout._stepGoalReached = stepGoalReached;
         return workout;
       },
 
@@ -1483,12 +1559,25 @@
         if (!name) throw new Error('Exercise / Workout Name is required');
 
         const oldDate = w.date;
+        const oldSteps = Number(w.steps) || 0;
+        const newSteps = parseOptionalNumber(data.steps);
+        const newStepsNum = Number(newSteps) || 0;
+
         w.name = name;
         w.sets = parseOptionalNumber(data.sets);
         w.reps = parseOptionalNumber(data.reps);
         w.weight = parseOptionalNumber(data.weight, true);
+        w.steps = newSteps;
         w.duration_minutes = parseOptionalNumber(data.duration_minutes);
         if (data.date) w.date = data.date;
+
+        if (oldDate === w.date) {
+          const diffSteps = newStepsNum - oldSteps;
+          if (diffSteps !== 0) await this.adjustStepsDelta(w.date, diffSteps);
+        } else {
+          if (oldSteps > 0) await this.adjustStepsDelta(oldDate, -oldSteps);
+          if (newStepsNum > 0) await this.adjustStepsDelta(w.date, newStepsNum);
+        }
 
         this.syncEventsWithWorkouts(u.id, oldDate);
         this.syncEventsWithWorkouts(u.id, w.date);
@@ -1502,6 +1591,9 @@
         const target = db.state.workouts.find(w => w.id === id && w.user_id === u.id);
         db.state.workouts = db.state.workouts.filter(w => !(w.id === id && w.user_id === u.id));
         if (target) {
+          if (Number(target.steps) > 0) {
+            await this.adjustStepsDelta(target.date, -Number(target.steps));
+          }
           db.state.events.forEach(evt => {
             if (evt.user_id === u.id && evt.completed_workout_id === id) {
               evt.completed_workout_id = null;
@@ -1636,9 +1728,12 @@
         if (markComplete) {
           evt.status = 'completed';
           if (routine && routine.exercises && routine.exercises.length > 0) {
+            let addedStepsTotal = 0;
             routine.exercises.forEach((ex, idx) => {
               const exists = db.state.workouts.some(w => w.user_id === u.id && w.date === evt.date && w.name === ex.name);
               if (!exists) {
+                const exSteps = parseOptionalNumber(ex.steps);
+                if (exSteps && exSteps > 0) addedStepsTotal += exSteps;
                 db.state.workouts.unshift({
                   id: db.state.nextIds.workout++,
                   user_id: u.id,
@@ -1646,6 +1741,7 @@
                   sets: ex.sets || null,
                   reps: ex.reps || null,
                   weight: ex.weight || null,
+                  steps: exSteps || null,
                   duration_minutes: idx === 0 ? resolvedDuration : null,
                   event_id: evt.id,
                   date: evt.date,
@@ -1653,6 +1749,9 @@
                 });
               }
             });
+            if (addedStepsTotal > 0) {
+              await this.adjustStepsDelta(evt.date, addedStepsTotal);
+            }
           } else {
             const w = {
               id: db.state.nextIds.workout++,
@@ -1661,6 +1760,7 @@
               sets: null,
               reps: null,
               weight: null,
+              steps: null,
               duration_minutes: resolvedDuration,
               event_id: evt.id,
               date: evt.date,
@@ -1672,11 +1772,20 @@
         } else {
           evt.status = 'scheduled';
           if (evt.completed_workout_id) {
+            const removedW = db.state.workouts.find(w => w.id === evt.completed_workout_id && w.user_id === u.id);
+            if (removedW && Number(removedW.steps) > 0) {
+              await this.adjustStepsDelta(evt.date, -Number(removedW.steps));
+            }
             db.state.workouts = db.state.workouts.filter(w => !(w.id === evt.completed_workout_id && w.user_id === u.id));
             evt.completed_workout_id = null;
           }
           if (routine && routine.exercises && routine.exercises.length > 0) {
             const exNames = new Set(routine.exercises.map(ex => ex.name));
+            const toRemove = db.state.workouts.filter(w => w.user_id === u.id && w.date === evt.date && (w.event_id === evt.id || exNames.has(w.name)));
+            const removedSteps = toRemove.reduce((sum, w) => sum + (Number(w.steps) || 0), 0);
+            if (removedSteps > 0) {
+              await this.adjustStepsDelta(evt.date, -removedSteps);
+            }
             db.state.workouts = db.state.workouts.filter(w => !(w.user_id === u.id && w.date === evt.date && (w.event_id === evt.id || exNames.has(w.name))));
           }
         }
@@ -2773,6 +2882,27 @@
       eyeOff: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>`
     };
 
+    function formatExerciseSummary(ex, includeAt = true) {
+      if (!ex) return '';
+      const parts = [];
+      const hasSetsReps = (Number(ex.sets) > 0) || (Number(ex.reps) > 0);
+      if (hasSetsReps) {
+        parts.push(`${ex.sets || 0}×${ex.reps || 0}`);
+        if (Number(ex.weight) > 0) {
+          parts.push(`${includeAt ? '@ ' : ''}${ex.weight} lbs`);
+        }
+      } else if (Number(ex.weight) > 0) {
+        parts.push(`${ex.weight} lbs`);
+      }
+      if (Number(ex.steps) > 0) {
+        parts.push(`👟 ${Number(ex.steps).toLocaleString()} steps`);
+      }
+      if (parts.length === 0) {
+        return '0×0 @ 0 lbs';
+      }
+      return parts.join(' • ');
+    }
+
     // =========================================================================
     // VIEWS
     // =========================================================================
@@ -2888,7 +3018,7 @@
                 </div>
                 ${hasRoutine && routine.exercises.length > 0 ? `
                   <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.65rem;">
-                    Exercises: ${routine.exercises.slice(0, 4).map(e => `${escapeHtml(e.name)} (${e.sets || 0}×${e.reps || 0})`).join(' • ')}${routine.exercises.length > 4 ? ` +${routine.exercises.length - 4} more` : ''}
+                    Exercises: ${routine.exercises.slice(0, 4).map(e => `${escapeHtml(e.name)} (${formatExerciseCompact(e)})`).join(' • ')}${routine.exercises.length > 4 ? ` +${routine.exercises.length - 4} more` : ''}
                   </div>
                 ` : ''}
               </div>
@@ -2975,13 +3105,13 @@
                <div>
                  <div style="font-size:0.8rem; font-weight:700; color:var(--color-primary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.15rem;">Step Tracker</div>
                  <div style="font-family:var(--font-display); font-size:1.6rem; font-weight:800; line-height:1.1;">${stats.steps.count.toLocaleString()} <span style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">/ ${stats.steps.target.toLocaleString()}</span></div>
-                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.35rem;">${stats.steps.count >= stats.steps.target ? 'Daily target reached! 🎉' : `${(stats.steps.target - stats.steps.count).toLocaleString()} steps remaining`}</div>
+                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.35rem;">${stats.steps.count >= stats.steps.target ? 'Daily target reached!' : `${(stats.steps.target - stats.steps.count).toLocaleString()} steps remaining`}</div>
                </div>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
                <button type="button" class="btn btn-danger btn-sm" onclick="window.resetSteps('${selectedDate}')">Reset</button>
                <div style="display:flex; align-items:center; background:var(--bg-input); border:1px solid var(--border-color); border-radius:9px; padding:0.2rem; margin-left:auto;">
-                 <input type="number" id="dashboard-custom-steps" placeholder="Total..." style="width:75px; background:transparent; border:none; padding:0.35rem 0.5rem; font-size:0.85rem; color:var(--text-white); box-shadow:none; outline:none;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); window.setExactSteps(this.value, '${selectedDate}'); }" />
+                 <input type="number" id="dashboard-custom-steps" style="width:75px; background:transparent; border:none; padding:0.35rem 0.5rem; font-size:0.85rem; color:var(--text-white); box-shadow:none; outline:none;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); window.setExactSteps(this.value, '${selectedDate}'); }" />
                  <button type="button" class="btn btn-primary btn-sm" style="padding:0.35rem 0.65rem;" onclick="window.setExactSteps(document.getElementById('dashboard-custom-steps').value, '${selectedDate}')">Set</button>
                </div>
             </div>
@@ -3214,8 +3344,9 @@
                       const vol = (Number(w.sets) || 0) * (Number(w.reps) || 0) * (Number(w.weight) || 0);
                       const perf = [
                         w.sets && w.reps ? `${w.sets}×${w.reps}` : (w.sets ? `${w.sets} sets` : null),
-                        w.weight !== null && w.weight !== undefined ? `@ ${w.weight} lbs` : null,
+                        w.weight !== null && w.weight !== undefined && Number(w.weight) > 0 ? `@ ${w.weight} lbs` : null,
                         vol > 0 ? `(${Math.round(vol).toLocaleString()} lbs vol)` : null,
+                        w.steps ? `${Number(w.steps).toLocaleString()} steps` : null,
                         w.duration_minutes ? `${w.duration_minutes} min` : null
                       ].filter(Boolean).join(' • ') || 'Completed workout';
                       return `
@@ -3355,27 +3486,21 @@
 
     async function renderWorkouts() {
       const workouts = await api.getWorkouts();
-      const defaultDate = window.dashboardSelectedDate || getLocalDateStr();
       return `
         <div class="page-header animate-fade-in">
           <div><h1 class="page-title">Workouts</h1><p class="page-subtitle">Log your completed training sessions and track progressive overload.</p></div>
         </div>
         <div class="card animate-fade-in" style="animation-delay:0.1s;">
           <form id="workout-form">
-            <div class="form-row">
-              <div class="form-group" style="flex:2;">
-                <div class="form-label-wrap"><label for="w-name">Exercise / Workout Name <span class="label-required">*</span></label></div>
-                <input type="text" id="w-name" required />
-              </div>
-              <div class="form-group" style="flex:1;">
-                <div class="form-label-wrap"><label for="w-date">Completion Date</label></div>
-                <input type="date" id="w-date" value="${defaultDate}" required />
-              </div>
+            <div class="form-group">
+              <div class="form-label-wrap"><label for="w-name">Exercise / Workout Name <span class="label-required">*</span></label></div>
+              <input type="text" id="w-name" required />
             </div>
             <div class="form-row">
               <div class="form-group"><div class="form-label-wrap"><label for="w-sets">Sets</label><span class="label-optional">(Optional)</span></div><input type="number" id="w-sets" min="1"/></div>
               <div class="form-group"><div class="form-label-wrap"><label for="w-reps">Reps</label><span class="label-optional">(Optional)</span></div><input type="number" id="w-reps" min="1"/></div>
               <div class="form-group"><div class="form-label-wrap"><label for="w-weight">Weight (lbs)</label><span class="label-optional">(Optional)</span></div><input type="number" id="w-weight" min="0" step="0.5"/></div>
+              <div class="form-group"><div class="form-label-wrap"><label for="w-steps">Steps</label><span class="label-optional">(Optional)</span></div><input type="number" id="w-steps" min="1" step="1"/></div>
               <div class="form-group"><div class="form-label-wrap"><label for="w-duration">Duration (min)</label><span class="label-optional">(Optional)</span></div><input type="number" id="w-duration" min="1"/></div>
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">Save Completed Workout</button>
@@ -3385,9 +3510,10 @@
           <div class="card-title">Completed Workout History</div>
           ${workouts.length ? workouts.map(w => {
             const details = [
-              w.sets !== null ? `${w.sets} sets` : null,
-              w.reps !== null ? `${w.reps} reps` : null,
-              w.weight !== null ? `@ ${w.weight} lbs` : null,
+              w.sets !== null && Number(w.sets) > 0 ? `${w.sets} sets` : null,
+              w.reps !== null && Number(w.reps) > 0 ? `${w.reps} reps` : null,
+              w.weight !== null && Number(w.weight) > 0 ? `@ ${w.weight} lbs` : null,
+              w.steps !== null && w.steps !== undefined && Number(w.steps) > 0 ? `${Number(w.steps).toLocaleString()} steps` : null,
               w.duration_minutes !== null ? `${w.duration_minutes} min` : null
             ].filter(Boolean).join(' • ') || 'Completed session';
             return `
@@ -3514,7 +3640,7 @@
       };
       
       if (autoAdd) {
-        window._editingRoutine.exercises.push({ name: '', sets: 3, reps: 10, weight: 0 });
+        window._editingRoutine.exercises.push({ name: '', sets: 3, reps: 10, weight: 0, steps: null });
       }
 
       const root = document.getElementById('modal-root');
@@ -3526,7 +3652,7 @@
               <div class="form-row">
                 <div class="form-group" style="flex:2;">
                   <label for="re-name">Routine Name <span class="label-required">*</span></label>
-                  <input type="text" id="re-name" value="${escapeHtml(window._editingRoutine.name)}" placeholder="e.g., Push Hypertrophy" required />
+                  <input type="text" id="re-name" value="${escapeHtml(window._editingRoutine.name)}" required />
                 </div>
                 <div class="form-group" style="flex:1;">
                   <label for="re-est-duration">Est. Duration (min)</label>
@@ -3587,10 +3713,12 @@
         const setsEl = document.getElementById(`re-ex-sets-${idx}`);
         const repsEl = document.getElementById(`re-ex-reps-${idx}`);
         const weightEl = document.getElementById(`re-ex-weight-${idx}`);
+        const stepsEl = document.getElementById(`re-ex-steps-${idx}`);
         if (nameEl) ex.name = nameEl.value;
         if (setsEl) ex.sets = parseInt(setsEl.value) || 0;
         if (repsEl) ex.reps = parseInt(repsEl.value) || 0;
         if (weightEl) ex.weight = parseFloat(weightEl.value) || 0;
+        if (stepsEl) ex.steps = parseInt(stepsEl.value) || null;
       });
     };
 
@@ -3623,19 +3751,23 @@
           <div class="form-row" style="gap:0.6rem;">
             <div class="form-group" style="flex:2; margin-bottom:0; min-width:140px;">
               <label for="re-ex-name-${idx}" style="font-size:0.75rem;">Name</label>
-              <input type="text" id="re-ex-name-${idx}" value="${escapeHtml(ex.name)}" placeholder="e.g., Squat" style="padding:0.5rem 0.75rem; font-size:0.88rem;" required />
+              <input type="text" id="re-ex-name-${idx}" value="${escapeHtml(ex.name)}" style="padding:0.5rem 0.75rem; font-size:0.88rem;" required />
             </div>
-            <div class="form-group" style="flex:1; min-width:60px; margin-bottom:0;">
+            <div class="form-group" style="flex:1; min-width:56px; margin-bottom:0;">
               <label for="re-ex-sets-${idx}" style="font-size:0.75rem;">Sets</label>
-              <input type="number" id="re-ex-sets-${idx}" value="${ex.sets || ''}" placeholder="3" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="1" />
+              <input type="number" id="re-ex-sets-${idx}" value="${ex.sets || ''}" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="0" />
             </div>
-            <div class="form-group" style="flex:1; min-width:60px; margin-bottom:0;">
+            <div class="form-group" style="flex:1; min-width:56px; margin-bottom:0;">
               <label for="re-ex-reps-${idx}" style="font-size:0.75rem;">Reps</label>
-              <input type="number" id="re-ex-reps-${idx}" value="${ex.reps || ''}" placeholder="10" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="1" />
+              <input type="number" id="re-ex-reps-${idx}" value="${ex.reps || ''}" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="0" />
             </div>
-            <div class="form-group" style="flex:1; min-width:70px; margin-bottom:0;">
+            <div class="form-group" style="flex:1; min-width:65px; margin-bottom:0;">
               <label for="re-ex-weight-${idx}" style="font-size:0.75rem;">Weight</label>
-              <input type="number" id="re-ex-weight-${idx}" value="${ex.weight || ''}" placeholder="lbs" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="0" step="0.5" />
+              <input type="number" id="re-ex-weight-${idx}" value="${ex.weight || ''}" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="0" step="0.5" />
+            </div>
+            <div class="form-group" style="flex:1.15; min-width:75px; margin-bottom:0;">
+              <label for="re-ex-steps-${idx}" style="font-size:0.75rem;">Steps</label>
+              <input type="number" id="re-ex-steps-${idx}" value="${ex.steps || ''}" style="padding:0.5rem 0.75rem; font-size:0.88rem;" min="0" step="1" />
             </div>
           </div>
         </div>
@@ -3644,7 +3776,7 @@
 
     window.reAddExercise = () => {
       window.syncReExercisesFromDOM();
-      window._editingRoutine.exercises.push({ name: '', sets: 3, reps: 10, weight: 0 });
+      window._editingRoutine.exercises.push({ name: '', sets: 3, reps: 10, weight: 0, steps: null });
       window.renderReExercises();
       const container = document.getElementById('re-exercises-container');
       if (container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
@@ -3671,15 +3803,16 @@
       const r = routines.find(x => x.id === id);
       if (!r) return;
       const totalSets = (r.exercises || []).reduce((acc, ex) => acc + (Number(ex.sets) || 0), 0);
+      const totalSteps = (r.exercises || []).reduce((acc, ex) => acc + (Number(ex.steps) || 0), 0);
       const root = document.getElementById('modal-root');
       root.innerHTML = `
         <div class="modal-overlay" onclick="closeModal()">
           <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()" style="max-width:580px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.75rem; padding-right:2.2rem;">
               <div>
                 <h3 class="card-title" style="margin:0; font-size:1.4rem; font-family:var(--font-display);">${escapeHtml(r.name)}</h3>
                 <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.25rem;">
-                  ${r.exercises ? r.exercises.length : 0} exercises &bull; ${totalSets} planned sets${r.estimated_duration ? ` &bull; ~${r.estimated_duration} min` : ''}
+                  ${r.exercises ? r.exercises.length : 0} exercises${totalSets > 0 ? ` &bull; ${totalSets} planned sets` : ''}${totalSteps > 0 ? ` &bull; 👟 ${totalSteps.toLocaleString()} steps` : ''}${r.estimated_duration ? ` &bull; ~${r.estimated_duration} min` : ''}
                 </div>
               </div>
               <button type="button" class="btn btn-secondary btn-sm" onclick="window.openRoutineEditorModal(${r.id})">Edit Routine</button>
@@ -3689,7 +3822,7 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; padding:0.8rem 1rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px;">
                   <div>
                     <div style="font-weight:700; color:var(--text-white); font-size:0.94rem;">${i + 1}. ${escapeHtml(ex.name)}</div>
-                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">${ex.sets || 0} sets &times; ${ex.reps || 0} reps @ ${ex.weight || 0} lbs</div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">${formatExerciseSummary(ex)}</div>
                   </div>
                 </div>
               `).join('') : '<p style="color:var(--text-dim); font-size:0.88rem;">No exercises in this routine yet.</p>'}
@@ -3711,7 +3844,7 @@
       if (!container) return;
       container.innerHTML = (window.tempRoutineExercises || []).map((ex, idx) => `
         <div style="background:var(--bg-input); padding:0.8rem 1rem; border-radius:12px; display:flex; justify-content:space-between; align-items:center; border: 1px solid var(--border-color);">
-          <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${ex.sets||0} sets &times; ${ex.reps||0} reps @ ${ex.weight||0} lbs</span></div>
+          <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${formatExerciseSummary(ex)}</span></div>
           <button type="button" style="background:transparent; border:none; color:var(--color-danger); cursor:pointer; font-size:1.2rem; line-height:1;" onclick="window.removeRoutineExercise(${idx})" aria-label="Remove exercise">&times;</button>
         </div>
       `).join('');
@@ -3722,17 +3855,24 @@
       if (!nEl) return;
       const n = nEl.value.trim();
       if (!n) return showToast('Exercise name required.', 'error');
+      const stepsVal = parseOptionalNumber(document.getElementById('add-ex-steps')?.value);
+      const setsVal = parseOptionalNumber(document.getElementById('add-ex-sets').value);
+      const repsVal = parseOptionalNumber(document.getElementById('add-ex-reps').value);
+      const weightVal = parseOptionalNumber(document.getElementById('add-ex-weight').value, true);
+
       window.tempRoutineExercises = window.tempRoutineExercises || [];
       window.tempRoutineExercises.push({
         name: n,
-        sets: parseOptionalNumber(document.getElementById('add-ex-sets').value) || 3,
-        reps: parseOptionalNumber(document.getElementById('add-ex-reps').value) || 10,
-        weight: parseOptionalNumber(document.getElementById('add-ex-weight').value, true) || 0
+        sets: setsVal !== null ? setsVal : (stepsVal ? 0 : 3),
+        reps: repsVal !== null ? repsVal : (stepsVal ? 0 : 10),
+        weight: weightVal !== null ? weightVal : 0,
+        steps: stepsVal || null
       });
       nEl.value = '';
       document.getElementById('add-ex-sets').value = '';
       document.getElementById('add-ex-reps').value = '';
       document.getElementById('add-ex-weight').value = '';
+      if (document.getElementById('add-ex-steps')) document.getElementById('add-ex-steps').value = '';
       window.renderRoutineExercisesPreview();
     };
 
@@ -3759,11 +3899,11 @@
             <div class="form-row">
               <div class="form-group" style="flex:2;">
                 <div class="form-label-wrap"><label for="r-name">Routine Name <span class="label-required">*</span></label></div>
-                <input type="text" id="r-name" placeholder="e.g., Push Hypertrophy, Upper Body Power" required />
+                <input type="text" id="r-name" required />
               </div>
               <div class="form-group" style="flex:1;">
                 <div class="form-label-wrap"><label for="r-est-duration">Estimated Duration (min)</label><span class="label-optional">(Optional)</span></div>
-                <input type="number" id="r-est-duration" min="5" placeholder="e.g., 60" />
+                <input type="number" id="r-est-duration" min="5" />
               </div>
             </div>
             <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: 1.1rem; margin-top: 0.4rem;">
@@ -3771,16 +3911,17 @@
               <div id="routine-exercises-preview" style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:0.85rem;">
                 ${window.tempRoutineExercises.map((ex, idx) => `
                   <div style="background:var(--bg-input); padding:0.8rem 1rem; border-radius:12px; display:flex; justify-content:space-between; align-items:center; border: 1px solid var(--border-color);">
-                    <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${ex.sets||0} sets &times; ${ex.reps||0} reps @ ${ex.weight||0} lbs</span></div>
+                    <div><span style="font-weight:600;">${escapeHtml(ex.name)}</span><span style="color:var(--text-muted); margin-left:0.5rem; font-size:0.84rem;">${formatExerciseSummary(ex)}</span></div>
                     <button type="button" style="background:transparent; border:none; color:var(--color-danger); cursor:pointer; font-size:1.2rem; line-height:1;" onclick="window.removeRoutineExercise(${idx})" aria-label="Remove exercise">&times;</button>
                   </div>
                 `).join('')}
               </div>
               <div class="form-row" style="align-items:flex-end; background:var(--bg-input); padding:1rem; border-radius:14px; border:1px solid var(--border-color);">
-                <div class="form-group" style="flex:2; margin-bottom:0;"><label for="add-ex-name">Exercise Name</label><input type="text" id="add-ex-name" placeholder="e.g., Barbell Bench Press" /></div>
-                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-sets">Sets</label><input type="number" id="add-ex-sets" min="1" placeholder="3" /></div>
-                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-reps">Reps</label><input type="number" id="add-ex-reps" min="1" placeholder="10" /></div>
-                <div class="form-group" style="flex:1; margin-bottom:0;"><label for="add-ex-weight">Lbs</label><input type="number" id="add-ex-weight" min="0" step="0.5" placeholder="135" /></div>
+                <div class="form-group" style="flex:2; margin-bottom:0;"><label for="add-ex-name">Exercise Name</label><input type="text" id="add-ex-name" /></div>
+                <div class="form-group" style="flex:0.9; margin-bottom:0;"><label for="add-ex-sets">Sets</label><input type="number" id="add-ex-sets" min="0" /></div>
+                <div class="form-group" style="flex:0.9; margin-bottom:0;"><label for="add-ex-reps">Reps</label><input type="number" id="add-ex-reps" min="0" /></div>
+                <div class="form-group" style="flex:0.9; margin-bottom:0;"><label for="add-ex-weight">Lbs</label><input type="number" id="add-ex-weight" min="0" step="0.5" /></div>
+                <div class="form-group" style="flex:1.1; margin-bottom:0;"><label for="add-ex-steps">Steps</label><input type="number" id="add-ex-steps" min="0" step="1" /></div>
                 <button type="button" class="btn btn-secondary" onclick="window.addRoutineExercise()" style="margin-bottom:0; height:44px;">+ Add</button>
               </div>
             </div>
@@ -3791,6 +3932,7 @@
         <div class="routines-cards-grid animate-fade-in" style="animation-delay:0.1s;">
           ${routines.length ? routines.map(r => {
             const totalSets = (r.exercises || []).reduce((acc, ex) => acc + (Number(ex.sets) || 0), 0);
+            const totalSteps = (r.exercises || []).reduce((acc, ex) => acc + (Number(ex.steps) || 0), 0);
             return `
             <div class="card" style="cursor:pointer; display:flex; flex-direction:column; justify-content:space-between; gap:1rem; padding:1.25rem 1.4rem;" onclick="window.openRoutineDetailModal(${r.id})">
               <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem;">
@@ -3801,7 +3943,8 @@
               </div>
               <div style="color:var(--text-muted); font-size:0.84rem; display:flex; flex-wrap:wrap; gap:0.65rem;">
                 <span><strong style="color:var(--text-white);">${r.exercises ? r.exercises.length : 0}</strong> exercises</span>
-                <span>&bull; <strong style="color:var(--text-white);">${totalSets}</strong> sets</span>
+                ${totalSets > 0 || totalSteps === 0 ? `<span>&bull; <strong style="color:var(--text-white);">${totalSets}</strong> sets</span>` : ''}
+                ${totalSteps > 0 ? `<span>&bull; <strong style="color:var(--color-primary);">${totalSteps.toLocaleString()}</strong> steps</span>` : ''}
                 ${r.estimated_duration ? `<span>&bull; <strong style="color:var(--text-white);">~${r.estimated_duration}m</strong></span>` : ''}
               </div>
               <div style="display:flex; gap:0.55rem; margin-top:0.2rem;">
@@ -4513,7 +4656,7 @@
 
         viewBodyHTML = `
           <div class="tasks-filter-bar">
-            <input type="search" id="tasks-search-input" placeholder="Search title, notes, subtasks..." value="${escapeHtml(window.tasksSearchQuery || '')}" oninput="window.tasksSearchQuery = this.value; renderApp({ isRouteChange: false, preserveScroll: true });" style="flex:1; min-width:180px;" />
+            <input type="search" id="tasks-search-input" value="${escapeHtml(window.tasksSearchQuery || '')}" oninput="window.tasksSearchQuery = this.value; renderApp({ isRouteChange: false, preserveScroll: true });" style="flex:1; min-width:180px;" />
             <select aria-label="Filter Status" onchange="window.tasksFilterStatus = this.value; renderApp({ isRouteChange: false, preserveScroll: true });">
               <option value="active" ${filterStatus === 'active' ? 'selected' : ''}>Active Tasks</option>
               <option value="all" ${filterStatus === 'all' ? 'selected' : ''}>All Tasks</option>
@@ -4679,7 +4822,7 @@
 
         <form id="quick-task-form" class="quick-add-bar" onsubmit="event.preventDefault(); window.handleQuickAddTask();">
           <span style="color:var(--color-primary); font-weight:800; font-size:1.1rem; padding-left:0.25rem;">+</span>
-          <input type="text" id="qt-title" class="quick-add-input" placeholder="Quick add a task (e.g., Pay electricity bill, Submit report, Buy groceries)..." required />
+          <input type="text" id="qt-title" class="quick-add-input" required />
           <select id="qt-category" aria-label="Quick Task Category" style="width:auto; padding:0.4rem 0.65rem; font-size:0.78rem; border-radius:8px;">
             <option value="">Category (Optional)</option>
             ${categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
@@ -4778,12 +4921,12 @@
             </p>
             <div class="form-group">
               <label for="reset-identifier" style="margin-bottom:0.5rem; display:block;">Email or Username</label>
-              <input type="text" id="reset-identifier" placeholder="Enter your email or username" autocomplete="username" required />
+              <input type="text" id="reset-identifier" autocomplete="username" required />
             </div>
             <div class="form-group">
               <label for="reset-new-password" style="margin-bottom:0.5rem; display:block;">New Password</label>
               <div class="password-field-wrapper">
-                <input type="password" id="reset-new-password" placeholder="At least 6 characters" autocomplete="new-password" required />
+                <input type="password" id="reset-new-password" autocomplete="new-password" required />
                 <button type="button" class="password-eye-btn" aria-label="Show password" aria-pressed="false" onclick="window.togglePasswordVisibility('reset-new-password', this)">
                   ${SVGs.eye}
                 </button>
@@ -4792,7 +4935,7 @@
             <div class="form-group">
               <label for="reset-confirm-password" style="margin-bottom:0.5rem; display:block;">Confirm New Password</label>
               <div class="password-field-wrapper">
-                <input type="password" id="reset-confirm-password" placeholder="Re-enter new password" autocomplete="new-password" required />
+                <input type="password" id="reset-confirm-password" autocomplete="new-password" required />
                 <button type="button" class="password-eye-btn" aria-label="Show password" aria-pressed="false" onclick="window.togglePasswordVisibility('reset-confirm-password', this)">
                   ${SVGs.eye}
                 </button>
@@ -4811,8 +4954,8 @@
       return `
         <form onsubmit="event.preventDefault(); window.handleAuth(${isRegister})">
           ${isRegister 
-            ? `<div class="form-group"><label for="auth-email" style="margin-bottom:0.5rem; display:block;">Email Address</label><input type="email" id="auth-email" placeholder="Enter your email" autocomplete="email" required /></div>`
-            : `<div class="form-group"><label for="auth-identifier" style="margin-bottom:0.5rem; display:block;">Email or Username</label><input type="text" id="auth-identifier" placeholder="Enter your email or username" autocomplete="username" required /></div>`
+            ? `<div class="form-group"><label for="auth-email" style="margin-bottom:0.5rem; display:block;">Email Address</label><input type="email" id="auth-email" autocomplete="email" required /></div>`
+            : `<div class="form-group"><label for="auth-identifier" style="margin-bottom:0.5rem; display:block;">Email or Username</label><input type="text" id="auth-identifier" autocomplete="username" required /></div>`
           }
           <div class="form-group">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
@@ -4820,7 +4963,7 @@
               ${!isRegister ? `<button type="button" class="forgot-password-link" onclick="window.openForgotPasswordView()">Forgot password?</button>` : ''}
             </div>
             <div class="password-field-wrapper">
-              <input type="password" id="auth-password" placeholder="${isRegister ? 'At least 6 characters' : 'Enter your password'}" autocomplete="${isRegister ? 'new-password' : 'current-password'}" required />
+              <input type="password" id="auth-password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" required />
               <button type="button" class="password-eye-btn" aria-label="Show password" aria-pressed="false" onclick="window.togglePasswordVisibility('auth-password', this)">
                 ${SVGs.eye}
               </button>
@@ -4830,7 +4973,7 @@
             <div class="form-group">
               <label for="auth-confirm" style="margin-bottom:0.5rem; display:block;">Confirm Password</label>
               <div class="password-field-wrapper">
-                <input type="password" id="auth-confirm" placeholder="Re-enter your password" autocomplete="new-password" required />
+                <input type="password" id="auth-confirm" autocomplete="new-password" required />
                 <button type="button" class="password-eye-btn" aria-label="Show password" aria-pressed="false" onclick="window.togglePasswordVisibility('auth-confirm', this)">
                   ${SVGs.eye}
                 </button>
@@ -5241,16 +5384,13 @@
                 <label>Exercise / Workout Name <span class="label-required">*</span></label>
                 <input type="text" id="ew-name" value="${escapeHtml(w.name)}" required />
               </div>
-              <div class="form-group">
-                <label>Completion Date</label>
-                <input type="date" id="ew-date" value="${w.date}" required />
-              </div>
               <div class="form-row">
-                <div class="form-group"><label>Sets</label><input type="number" id="ew-sets" min="1" value="${w.sets !== null ? w.sets : ''}" /></div>
-                <div class="form-group"><label>Reps</label><input type="number" id="ew-reps" min="1" value="${w.reps !== null ? w.reps : ''}" /></div>
+                <div class="form-group"><label>Sets</label><input type="number" id="ew-sets" min="0" value="${w.sets !== null ? w.sets : ''}" /></div>
+                <div class="form-group"><label>Reps</label><input type="number" id="ew-reps" min="0" value="${w.reps !== null ? w.reps : ''}" /></div>
               </div>
               <div class="form-row">
                 <div class="form-group"><label>Weight (lbs)</label><input type="number" id="ew-weight" min="0" step="0.5" value="${w.weight !== null ? w.weight : ''}" /></div>
+                <div class="form-group"><label>Steps</label><input type="number" id="ew-steps" min="0" step="1" value="${w.steps !== null && w.steps !== undefined ? w.steps : ''}" /></div>
                 <div class="form-group"><label>Duration (min)</label><input type="number" id="ew-duration" min="1" value="${w.duration_minutes !== null ? w.duration_minutes : ''}" /></div>
               </div>
               <div style="display:flex; gap:0.75rem; justify-content:space-between; margin-top:1rem;">
@@ -5269,10 +5409,11 @@
         try {
           await api.updateWorkout(id, {
             name: document.getElementById('ew-name').value,
-            date: document.getElementById('ew-date').value,
+            date: w.date,
             sets: document.getElementById('ew-sets').value,
             reps: document.getElementById('ew-reps').value,
             weight: document.getElementById('ew-weight').value,
+            steps: document.getElementById('ew-steps').value,
             duration_minutes: document.getElementById('ew-duration').value
           });
           root.innerHTML = '';
@@ -5290,11 +5431,41 @@
       renderApp({ isRouteChange: false, preserveScroll: true });
     }, 'Delete Routine');
 
+    window.updateLoggedExerciseSteps = async (stepInputEl) => {
+      const row = stepInputEl.closest('.routine-ex-row');
+      if (!row) return;
+      const checkbox = row.querySelector('.custom-checkbox');
+      if (!checkbox) return;
+      const newSteps = parseOptionalNumber(stepInputEl.value);
+      checkbox.setAttribute('data-steps', newSteps !== null ? newSteps : '');
+      const wId = checkbox.dataset.workoutId ? parseInt(checkbox.dataset.workoutId, 10) : null;
+      if (checkbox.checked && wId) {
+        const workouts = await api.getWorkouts();
+        const w = workouts.find(x => x.id === wId);
+        if (w) {
+          await api.updateWorkout(wId, {
+            name: w.name,
+            date: w.date,
+            sets: w.sets,
+            reps: w.reps,
+            weight: w.weight,
+            steps: newSteps,
+            duration_minutes: w.duration_minutes
+          });
+          showToast(`Updated steps for ${w.name}!`);
+          await renderApp({ isRouteChange: false, preserveScroll: true });
+        }
+      }
+    };
+
     window.toggleRoutineExercise = async (checkbox) => {
       const exName = (checkbox.getAttribute('data-name') || '').trim();
       const exSets = checkbox.getAttribute('data-sets');
       const exReps = checkbox.getAttribute('data-reps');
       const exWeight = checkbox.getAttribute('data-weight');
+      const row = checkbox.closest('.routine-ex-row');
+      const stepInput = row ? row.querySelector('.routine-ex-step-input') : null;
+      const exSteps = stepInput ? stepInput.value : checkbox.getAttribute('data-steps');
       const dateStr = checkbox.getAttribute('data-date') || getLocalDateStr();
       const eventIdAttr = checkbox.getAttribute('data-event-id');
       const durInput = document.getElementById('modal-routine-duration') || document.getElementById('evt-complete-duration');
@@ -5308,15 +5479,20 @@
             sets: exSets,
             reps: exReps,
             weight: exWeight,
+            steps: exSteps,
             duration_minutes: durationMin,
             event_id: eventIdAttr ? parseInt(eventIdAttr, 10) : null,
             date: dateStr
           });
           checkbox.dataset.workoutId = w.id;
-          if (checkbox.nextElementSibling) {
-            checkbox.nextElementSibling.style.color = 'var(--color-primary)';
+          const titleEl = row ? row.querySelector('.routine-ex-title') : checkbox.nextElementSibling;
+          if (titleEl) titleEl.style.color = 'var(--color-primary)';
+          if (w._stepGoalReached) {
+            const target = (await api.getUserTargets()).steps || 10000;
+            window.showCelebrationModal("Step Goal Reached!", `Amazing! Logging ${exName} pushed you past your daily goal of ${target.toLocaleString()} steps!`);
+          } else {
+            showToast(`Logged ${exName}${Number(exSteps) > 0 ? ` (${Number(exSteps).toLocaleString()} steps)` : ''} for ${dateStr}!`);
           }
-          showToast(`Logged ${exName} for ${dateStr}!`);
         } else {
           let targetWorkoutId = checkbox.dataset.workoutId ? parseInt(checkbox.dataset.workoutId, 10) : null;
           if (!targetWorkoutId) {
@@ -5328,9 +5504,8 @@
             await api.deleteWorkout(targetWorkoutId);
           }
           checkbox.dataset.workoutId = '';
-          if (checkbox.nextElementSibling) {
-            checkbox.nextElementSibling.style.color = 'var(--text-white)';
-          }
+          const titleEl = row ? row.querySelector('.routine-ex-title') : checkbox.nextElementSibling;
+          if (titleEl) titleEl.style.color = 'var(--text-white)';
           showToast(`Removed ${exName} from ${dateStr}.`);
         }
 
@@ -5345,6 +5520,45 @@
         if (checkbox && checkbox.isConnected) checkbox.disabled = false;
       }
     };
+
+    function renderChecklistExerciseRowHTML(ex, matchedWorkout, dateStr, eventId = null) {
+      const checked = !!matchedWorkout;
+      const wId = matchedWorkout ? matchedWorkout.id : '';
+      const isStepBased = (Number(ex.steps) > 0) || /walk|step|run|jog|hike|cardio|treadmill/i.test(ex.name || '');
+      const currentStepsVal = matchedWorkout && matchedWorkout.steps !== null && matchedWorkout.steps !== undefined
+        ? matchedWorkout.steps
+        : (ex.steps || '');
+
+      return `
+        <div class="routine-ex-row" style="display:flex; align-items:center; justify-content:space-between; gap:0.65rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${checked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; transition:var(--transition); flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; flex:1; min-width:165px;">
+            <input type="checkbox" class="custom-checkbox" ${checked ? 'checked' : ''}
+                   data-workout-id="${wId}"
+                   ${eventId ? `data-event-id="${eventId}"` : ''}
+                   data-name="${escapeHtml(ex.name)}"
+                   data-sets="${ex.sets || ''}"
+                   data-reps="${ex.reps || ''}"
+                   data-weight="${ex.weight || ''}"
+                   data-steps="${currentStepsVal}"
+                   data-date="${dateStr}"
+                   onchange="window.toggleRoutineExercise(this)" />
+            <div class="routine-ex-title" style="font-weight:600; font-size:0.9rem; transition:color 0.2s; color:${checked ? 'var(--color-primary)' : 'var(--text-white)'}">
+              ${escapeHtml(ex.name)}
+              <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.35rem;">${formatExerciseCompact(ex)}</span>
+            </div>
+          </label>
+          ${isStepBased ? `
+            <div style="display:flex; align-items:center; gap:0.35rem;" onclick="event.stopPropagation();">
+              <span style="font-size:0.72rem; color:var(--text-muted); font-weight:600;">Steps:</span>
+              <input type="number" class="routine-ex-step-input" min="0" step="100" value="${currentStepsVal}"
+                     aria-label="Steps for ${escapeHtml(ex.name)}"
+                     onchange="window.updateLoggedExerciseSteps(this)"
+                     style="width:88px !important; padding:0.3rem 0.5rem !important; font-size:0.8rem !important; border-radius:8px !important; text-align:right;" />
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
 
     window.openRoutineModal = async (routine, dateStr) => {
       if (!routine) return;
@@ -5366,24 +5580,7 @@
                 const normName = String(ex.name || '').trim().toLowerCase();
                 const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
                 if (matched) usedWorkoutIds.add(matched.id);
-                const isChecked = !!matched;
-                const wId = matched ? matched.id : '';
-                return `
-                  <label style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${isChecked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
-                    <input type="checkbox" class="custom-checkbox" ${isChecked ? 'checked' : ''} 
-                           data-workout-id="${wId}"
-                           data-name="${escapeHtml(ex.name)}"
-                           data-sets="${ex.sets || ''}"
-                           data-reps="${ex.reps || ''}"
-                           data-weight="${ex.weight || ''}"
-                           data-date="${dateStr}"
-                           onchange="window.toggleRoutineExercise(this)" />
-                    <div style="font-weight:600; font-size:0.92rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
-                      ${escapeHtml(ex.name)}
-                      <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.4rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
-                    </div>
-                  </label>
-                `;
+                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null);
               }).join('') : '<p style="color:var(--text-dim)">No exercises added to this split template.</p>'}
             </div>
           </div>
@@ -5444,25 +5641,7 @@
                       const normName = String(ex.name || '').trim().toLowerCase();
                       const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
                       if (matched) usedWorkoutIds.add(matched.id);
-                      const checked = !!matched;
-                      const wId = matched ? matched.id : '';
-                      return `
-                        <label style="display:flex; align-items:center; gap:0.75rem; padding:0.7rem 0.9rem; background:var(--bg-input); border:1px solid ${checked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
-                          <input type="checkbox" class="custom-checkbox" ${checked ? 'checked' : ''}
-                                 data-workout-id="${wId}"
-                                 data-event-id="${evt.id}"
-                                 data-name="${escapeHtml(ex.name)}"
-                                 data-sets="${ex.sets || ''}"
-                                 data-reps="${ex.reps || ''}"
-                                 data-weight="${ex.weight || ''}"
-                                 data-date="${evt.date}"
-                                 onchange="window.toggleRoutineExercise(this)" />
-                          <div style="font-weight:600; font-size:0.9rem; color:${checked ? 'var(--color-primary)' : 'var(--text-white)'}">
-                            ${escapeHtml(ex.name)}
-                            <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.35rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
-                          </div>
-                        </label>
-                      `;
+                      return renderChecklistExerciseRowHTML(ex, matched, evt.date, evt.id);
                     }).join('')}
                   </div>
                 </div>
@@ -5641,24 +5820,7 @@
                 const normName = String(ex.name || '').trim().toLowerCase();
                 const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
                 if (matched) usedWorkoutIds.add(matched.id);
-                const isChecked = !!matched;
-                const wId = matched ? matched.id : '';
-                return `
-                  <label style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${isChecked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
-                    <input type="checkbox" class="custom-checkbox" ${isChecked ? 'checked' : ''} 
-                           data-workout-id="${wId}"
-                           data-name="${escapeHtml(ex.name)}"
-                           data-sets="${ex.sets || ''}"
-                           data-reps="${ex.reps || ''}"
-                           data-weight="${ex.weight || ''}"
-                           data-date="${dateStr}"
-                           onchange="window.toggleRoutineExercise(this)" />
-                    <div style="font-weight:600; font-size:0.92rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
-                      ${escapeHtml(ex.name)}
-                      <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.4rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
-                    </div>
-                  </label>
-                `;
+                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null);
               }).join('') : '<p style="color:var(--text-dim)">No exercises added to this split template.</p>'}
             </div>
           </div>
@@ -5825,7 +5987,7 @@
             <h3 class="card-title" style="margin-top:0;">Manage Task Lists & Categories</h3>
             <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:1rem;">Organize your responsibilities into custom lists. Renaming or removing a list updates existing tasks automatically.</p>
             <form onsubmit="event.preventDefault(); window.handleCreateTaskCategory();" style="display:flex; gap:0.5rem; margin-bottom:1.15rem;">
-              <input type="text" id="new-task-cat-input" placeholder="New category or list name..." required />
+              <input type="text" id="new-task-cat-input" required />
               <button type="submit" class="btn btn-primary btn-sm">Add List</button>
             </form>
             <div style="display:flex; flex-direction:column; gap:0.5rem; max-height:280px; overflow-y:auto;">
@@ -6033,7 +6195,7 @@
                 <div class="form-label-wrap">
                   <label for="tm-title">Task Title <span class="label-required">*</span></label>
                 </div>
-                <input type="text" id="tm-title" value="${escapeHtml(task ? task.title : prefillTitle)}" placeholder="e.g., Pay monthly rent, Renew car insurance, Submit project report" required />
+                <input type="text" id="tm-title" value="${escapeHtml(task ? task.title : prefillTitle)}" required />
               </div>
 
               <div class="form-row">
@@ -6115,14 +6277,14 @@
 
               <div class="form-group">
                 <div class="form-label-wrap"><label for="tm-desc">Notes / Description</label><span class="label-optional">(Optional)</span></div>
-                <textarea id="tm-desc" rows="2" placeholder="Account numbers, links, or helpful details...">${escapeHtml(task ? task.description : '')}</textarea>
+                <textarea id="tm-desc" rows="2">${escapeHtml(task ? task.description : '')}</textarea>
               </div>
 
               <div class="form-group">
                 <div class="form-label-wrap"><label>Subtasks / Checklist</label><span class="label-optional">(Optional)</span></div>
                 <div id="tm-subtasks-list" style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:0.5rem;"></div>
                 <div style="display:flex; gap:0.5rem;">
-                  <input type="text" id="tm-new-subtask" placeholder="Add a step or subtask..." onkeydown="if(event.key==='Enter'){event.preventDefault();window.addModalSubtask();}" />
+                  <input type="text" id="tm-new-subtask" onkeydown="if(event.key==='Enter'){event.preventDefault();window.addModalSubtask();}" />
                   <button type="button" class="btn btn-secondary btn-sm" onclick="window.addModalSubtask()">Add Step</button>
                 </div>
               </div>
@@ -6594,18 +6756,24 @@
           const submitBtn = workoutForm.querySelector('button[type="submit"]');
           await withButtonLoading(submitBtn, async () => {
             try {
-              const wDate = document.getElementById('w-date').value;
-              await api.createWorkout({
+              const wDate = window.dashboardSelectedDate || getLocalDateStr();
+              const w = await api.createWorkout({
                 name: document.getElementById('w-name').value,
                 date: wDate,
                 sets: document.getElementById('w-sets').value,
                 reps: document.getElementById('w-reps').value,
                 weight: document.getElementById('w-weight').value,
+                steps: document.getElementById('w-steps').value,
                 duration_minutes: document.getElementById('w-duration').value
               });
               clearRouteFormDraft('/workouts');
               window.selectDashboardDate(wDate);
-              window.showCelebrationModal("Workout Logged! 💪", "Great job getting your session in today!");
+              if (w._stepGoalReached) {
+                const target = (await api.getUserTargets()).steps || 10000;
+                window.showCelebrationModal("Workout & Step Goal Reached!", `Awesome session! Logging those steps also pushed you past your ${target.toLocaleString()} daily step goal!`);
+              } else {
+                window.showCelebrationModal("Workout Logged! 💪", "Great job getting your session in today!");
+              }
             } catch (err) {
               showToast(err.message, 'error');
             }
