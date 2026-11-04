@@ -1122,7 +1122,8 @@
             protein: null,
             carbs: null,
             fat: null,
-            weekly_workouts: null
+            weekly_workouts: null,
+            steps: 10000
           },
           task_categories: [...DEFAULT_TASK_CATEGORIES]
         }
@@ -1133,6 +1134,7 @@
       routines: [],
       events: [],
       tasks: [],
+      steps_log: [],
       nextIds: { user: 2, session: 2, meal: 1, workout: 1, routine: 1, event: 1, task: 1 }
     });
 
@@ -1150,9 +1152,12 @@
               const maxTaskId = this.state.tasks.reduce((m, t) => Math.max(m, Number(t.id) || 0), 0);
               this.state.nextIds.task = maxTaskId + 1;
             }
+            if (!Array.isArray(this.state.steps_log)) this.state.steps_log = [];
             this.state.users.forEach(u => {
               if (!u.targets) {
-                u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null };
+                u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
+              } else if (u.targets.steps === undefined) {
+                u.targets.steps = 10000;
               }
               if (!Array.isArray(u.task_categories) || u.task_categories.length === 0) {
                 u.task_categories = [...DEFAULT_TASK_CATEGORIES];
@@ -1289,8 +1294,9 @@
 
       async getUserTargets() {
         const u = db.getAuthenticatedUser();
-        if (!u) return { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null };
-        if (!u.targets) u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null };
+        if (!u) return { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
+        if (!u.targets) u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
+        if (u.targets.steps === undefined) u.targets.steps = 10000;
         return u.targets;
       },
 
@@ -1302,10 +1308,26 @@
           protein: parseOptionalNumber(newTargets.protein, true),
           carbs: parseOptionalNumber(newTargets.carbs, true),
           fat: parseOptionalNumber(newTargets.fat, true),
-          weekly_workouts: parseOptionalNumber(newTargets.weekly_workouts)
+          weekly_workouts: parseOptionalNumber(newTargets.weekly_workouts),
+          steps: parseOptionalNumber(newTargets.steps) || 10000
         };
         db.save();
         return u.targets;
+      },
+
+      async logSteps(date, count) {
+        const u = db.getAuthenticatedUser();
+        if (!u) throw new Error('Unauthorized');
+        if (!db.state.steps_log) db.state.steps_log = [];
+        let log = db.state.steps_log.find(s => s.user_id === u.id && s.date === date);
+        const safeCount = Math.max(0, parseInt(count, 10) || 0);
+        if (log) {
+            log.count = safeCount;
+        } else {
+            db.state.steps_log.push({ user_id: u.id, date, count: safeCount });
+        }
+        db.save();
+        return safeCount;
       },
 
       async getMeals() {
@@ -1667,12 +1689,16 @@
       async getDashboardStats(selectedDateStr) {
         const todayStr = getLocalDateStr();
         const targetDate = selectedDateStr || todayStr;
+        const u = db.getAuthenticatedUser();
 
         const targets = await this.getUserTargets();
         const allMeals = await this.getMeals();
         const allWorkouts = await this.getWorkouts();
         const allRoutines = await this.getRoutines();
         const allEvents = await this.getEvents();
+
+        const stepLog = (db.state.steps_log || []).find(s => s.user_id === u?.id && s.date === targetDate);
+        const dailySteps = stepLog ? stepLog.count : 0;
 
         const dayMeals = allMeals.filter(m => m.date === targetDate);
         const calcMacroCard = (field, unit, targetVal) => {
@@ -2008,6 +2034,7 @@
           todayStr,
           targetDate,
           targets,
+          steps: { count: dailySteps, target: targets.steps || 10000 },
           macros,
           allEvents,
           allRoutines,
@@ -2680,6 +2707,11 @@
         headerPrimaryBtnHtml = `<button class="btn btn-primary btn-sm overview-log-meal-btn" onclick="window.navigate('/nutrition')">+ Log Meal</button>`;
       }
 
+      const stepPct = Math.min(100, Math.max(0, Math.round((stats.steps.count / stats.steps.target) * 100)));
+      const stepRadius = 40;
+      const stepCircumference = 2 * Math.PI * stepRadius;
+      const stepDashoffset = stepCircumference - (stepPct / 100) * stepCircumference;
+
       const renderMacroCard = (title, m) => {
         const barWidth = m.hasTarget ? Math.min(100, Math.max(0, m.pct)) : (m.hasData ? 100 : 0);
         const cardStateClass = m.hasTarget && m.hasData
@@ -2838,6 +2870,34 @@
             ${headerPrimaryBtnHtml}
           </div>
         </div>
+
+        <section class="animate-fade-in" style="animation-delay:0.03s;" aria-label="Daily Steps">
+          <div class="card" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1.5rem; background: linear-gradient(135deg, rgba(0, 229, 153, 0.05) 0%, rgba(20, 20, 25, 0.72) 100%);">
+            <div style="display:flex; align-items:center; gap:1.25rem;">
+               <div style="position:relative; width:90px; height:90px; flex-shrink:0;">
+                 <svg width="90" height="90" viewBox="0 0 100 100" style="position:absolute; inset:0;">
+                   <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"></circle>
+                   <circle cx="50" cy="50" r="40" fill="none" stroke="var(--color-primary)" stroke-width="8" stroke-dasharray="${stepCircumference}" stroke-dashoffset="${stepDashoffset}" stroke-linecap="round" style="transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 0.8s cubic-bezier(0.22, 1, 0.36, 1);"></circle>
+                 </svg>
+                 <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+                   <span style="font-size:1.15rem; font-weight:800; color:var(--text-white); font-family:var(--font-display);">${stepPct}%</span>
+                 </div>
+               </div>
+               <div>
+                 <div style="font-size:0.8rem; font-weight:700; color:var(--color-primary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.15rem;">Step Tracker</div>
+                 <div style="font-family:var(--font-display); font-size:1.6rem; font-weight:800; line-height:1.1;">${stats.steps.count.toLocaleString()} <span style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">/ ${stats.steps.target.toLocaleString()}</span></div>
+                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.35rem;">${stats.steps.count >= stats.steps.target ? 'Daily target reached! 🎉' : `${(stats.steps.target - stats.steps.count).toLocaleString()} steps remaining`}</div>
+               </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+               <button type="button" class="btn btn-danger btn-sm" onclick="window.resetSteps('${selectedDate}')">Reset</button>
+               <div style="display:flex; align-items:center; background:var(--bg-input); border:1px solid var(--border-color); border-radius:9px; padding:0.2rem; margin-left:auto;">
+                 <input type="number" id="dashboard-custom-steps" placeholder="Total..." style="width:75px; background:transparent; border:none; padding:0.35rem 0.5rem; font-size:0.85rem; color:var(--text-white); box-shadow:none; outline:none;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); window.setExactSteps(this.value, '${selectedDate}'); }" />
+                 <button type="button" class="btn btn-primary btn-sm" style="padding:0.35rem 0.65rem;" onclick="window.setExactSteps(document.getElementById('dashboard-custom-steps').value, '${selectedDate}')">Set</button>
+               </div>
+            </div>
+          </div>
+        </section>
         
         <section class="animate-fade-in" style="animation-delay:0.04s;" aria-label="Nutrition Summary">
           <div class="section-header">
@@ -4605,7 +4665,8 @@
                 <span style="font-size:0.82rem; color:var(--text-dim);">Configured Targets</span>
                 <button class="section-link" onclick="window.openGoalsModal()">Update</button>
               </div>
-              <div style="font-size:0.88rem; color:var(--text-white);">
+              <div style="font-size:0.88rem; color:var(--text-white); line-height:1.6;">
+                Steps: <strong>${targets.steps ? targets.steps.toLocaleString() : '10,000'}</strong> &bull;
                 Calories: <strong>${targets.calories ? `${targets.calories} kcal` : 'Not set'}</strong> &bull;
                 Protein: <strong>${targets.protein ? `${targets.protein}g` : 'Not set'}</strong> &bull;
                 Carbs: <strong>${targets.carbs ? `${targets.carbs}g` : 'Not set'}</strong> &bull;
@@ -4879,6 +4940,10 @@
                   <label for="g-weekly">Weekly Workouts Goal</label>
                   <input type="number" id="g-weekly" min="1" max="21" value="${targets.weekly_workouts !== null ? targets.weekly_workouts : ''}" />
                 </div>
+                <div class="form-group">
+                  <label for="g-steps">Daily Steps Target</label>
+                  <input type="number" id="g-steps" min="0" step="100" value="${targets.steps !== null ? targets.steps : 10000}" />
+                </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
@@ -4910,7 +4975,8 @@
             protein: document.getElementById('g-pro').value,
             carbs: document.getElementById('g-carbs').value,
             fat: document.getElementById('g-fat').value,
-            weekly_workouts: document.getElementById('g-weekly').value
+            weekly_workouts: document.getElementById('g-weekly').value,
+            steps: document.getElementById('g-steps').value
           });
           root.innerHTML = '';
           showToast('Goals & targets updated!');
@@ -5325,7 +5391,11 @@
       const dur = durElem ? durElem.value : null;
       await api.toggleEventCompletion(eventId, markComplete, dur);
       document.getElementById('modal-root').innerHTML = '';
-      showToast(markComplete ? 'Session marked completed!' : 'Session marked uncompleted.');
+      if (markComplete) {
+         window.showCelebrationModal("Workout Complete! 💪", "Great work crushing your session today! Keep up the momentum.");
+      } else {
+         showToast('Session marked uncompleted.');
+      }
       renderApp();
     };
 
@@ -5669,6 +5739,133 @@
         renderApp({ isRouteChange: false, preserveScroll: true });
       } catch (err) {
         showToast(err.message, 'error');
+      }
+    };
+
+    window.showCelebrationModal = (title, message) => {
+      const root = document.getElementById('modal-root');
+      root.innerHTML = `
+        <div id="celebration-overlay" class="modal-overlay" style="background: rgba(0,0,0,0.5); transition: opacity 0.5s ease; z-index: 10001;">
+          <div class="modal-dialog" role="dialog" aria-modal="true" style="
+              max-width:420px; text-align:center; padding: 3.5rem 2.5rem;
+              background: radial-gradient(circle at center, var(--bg-surface-elevated) 15%, rgba(10,12,16,0.95) 100%);
+              border: 1px solid rgba(0, 229, 153, 0.4);
+              box-shadow: 0 0 50px rgba(0, 229, 153, 0.25), inset 0 0 80px rgba(0,0,0,0.9);
+              border-radius: 28px;
+              transform: scale(1);
+              animation: celebPopIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+          ">
+            <div style="font-size:5rem; margin-bottom:1.25rem; animation: celebFloat 2.5s ease-in-out infinite;">🎉</div>
+            <h3 class="card-title" style="justify-content:center; font-size:1.8rem; color:var(--color-primary); margin-bottom:0.85rem; text-shadow: 0 0 15px rgba(0,229,153,0.5); line-height: 1.1;">${escapeHtml(title)}</h3>
+            <p style="color:var(--text-white); font-size:1.05rem; margin-bottom:0; line-height:1.6; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">${escapeHtml(message)}</p>
+          </div>
+        </div>
+      `;
+
+      if (!document.getElementById('celebration-styles')) {
+          const style = document.createElement('style');
+          style.id = 'celebration-styles';
+          style.innerHTML = `
+              @keyframes celebPopIn {
+                  0% { opacity: 0; transform: scale(0.8) translateY(30px); }
+                  100% { opacity: 1; transform: scale(1) translateY(0); }
+              }
+              @keyframes celebFloat {
+                  0%, 100% { transform: translateY(0) rotate(0deg); }
+                  50% { transform: translateY(-12px) rotate(4deg); }
+              }
+          `;
+          document.head.appendChild(style);
+      }
+
+      // Synthesize a quick, satisfying happy chime 
+      try {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+              const ctx = new AudioContext();
+              if (ctx.state === 'suspended') ctx.resume();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.type = 'triangle';
+              
+              const now = ctx.currentTime;
+              osc.frequency.setValueAtTime(523.25, now); // C5
+              osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+              osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+              osc.frequency.setValueAtTime(1046.50, now + 0.35); // C6
+              
+              gain.gain.setValueAtTime(0, now);
+              gain.gain.linearRampToValueAtTime(0.25, now + 0.05);
+              gain.gain.setValueAtTime(0.25, now + 0.35);
+              gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+              
+              osc.start(now);
+              osc.stop(now + 1.2);
+          }
+      } catch (e) { console.log('Audio playback ignored/unavailable'); }
+
+      // Fire fireworks confetti using canvas-confetti library
+      const fireConfetti = () => {
+          if (!window.confetti) return;
+          const duration = 2500;
+          const end = Date.now() + duration;
+          (function frame() {
+              window.confetti({ particleCount: 6, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#00e599', '#ffffff', '#f59e0b'], zIndex: 10002 });
+              window.confetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#00e599', '#ffffff', '#f59e0b'], zIndex: 10002 });
+              if (Date.now() < end) requestAnimationFrame(frame);
+          }());
+      };
+
+      if (!window.confetti) {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js';
+          script.onload = fireConfetti;
+          document.head.appendChild(script);
+      } else {
+          fireConfetti();
+      }
+
+      // Automatically fade out and close after 3 seconds
+      setTimeout(() => {
+          const overlay = document.getElementById('celebration-overlay');
+          if (overlay) {
+              overlay.style.opacity = '0';
+              setTimeout(() => { if (root.contains(overlay)) root.innerHTML = ''; }, 500);
+          }
+      }, 3000);
+    };
+
+    window.resetSteps = async (dateStr) => {
+      try {
+        await api.logSteps(dateStr, 0);
+        renderApp({ isRouteChange: false, preserveScroll: true });
+        showToast('Steps reset to 0.');
+      } catch(e) {
+        showToast(e.message, 'error');
+      }
+    };
+
+    window.setExactSteps = async (val, dateStr) => {
+      try {
+        if(!val || val.trim() === '') return;
+        const target = (await api.getUserTargets()).steps || 10000;
+        const u = db.getAuthenticatedUser();
+        const stepLog = (db.state.steps_log || []).find(s => s.user_id === u.id && s.date === dateStr);
+        const current = stepLog ? stepLog.count : 0;
+        const newTotal = parseInt(val, 10);
+        
+        await api.logSteps(dateStr, newTotal);
+        renderApp({ isRouteChange: false, preserveScroll: true });
+        
+        if (current < target && newTotal >= target) {
+            window.showCelebrationModal("Step Goal Reached! 🌟", `Amazing! You've hit your daily goal of ${target.toLocaleString()} steps!`);
+        } else {
+            showToast('Steps updated!');
+        }
+      } catch(e) {
+        showToast(e.message, 'error');
       }
     };
 
@@ -6290,7 +6487,7 @@
               });
               clearRouteFormDraft('/workouts');
               window.selectDashboardDate(wDate);
-              showToast('Workout saved & metrics updated!');
+              window.showCelebrationModal("Workout Logged! 💪", "Great job getting your session in today!");
             } catch (err) {
               showToast(err.message, 'error');
             }
@@ -6401,7 +6598,7 @@
       name: savedUser?.name || user.user_metadata?.name || user.email.split('@')[0],
       email: user.email,
       created_at: user.created_at,
-      targets: savedUser?.targets || { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
+      targets: savedUser?.targets || { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 },
       task_categories: savedUser?.task_categories || [...DEFAULT_TASK_CATEGORIES]
     };
 
