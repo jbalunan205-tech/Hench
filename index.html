@@ -544,20 +544,21 @@
     /* Custom Modern Checkbox */
     .custom-checkbox {
       appearance: none; -webkit-appearance: none;
-      width: 1.4rem; height: 1.4rem; flex-shrink: 0;
+      width: 1.15rem !important; height: 1.15rem !important; flex-shrink: 0;
+      padding: 0 !important;
       border: 2px solid var(--border-strong);
-      border-radius: 7px; background: rgba(0,0,0,0.25);
+      border-radius: 6px; background: rgba(0,0,0,0.25);
       cursor: pointer; position: relative;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .custom-checkbox:checked {
       background-color: var(--color-primary);
       border-color: var(--color-primary);
-      box-shadow: 0 0 12px var(--color-primary-dim);
+      box-shadow: 0 0 10px var(--color-primary-dim);
     }
     .custom-checkbox:checked::after {
       content: ''; position: absolute;
-      top: 2px; left: 7px; width: 5px; height: 10px;
+      top: 1px; left: 5px; width: 4px; height: 8px;
       border: solid #000; border-width: 0 2px 2px 0;
       transform: rotate(45deg);
     }
@@ -632,7 +633,33 @@
     #toast.error { border-left-color: var(--color-danger); }
     
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; animation: fadeIn 0.2s ease; }
-    .modal-dialog { background: var(--bg-surface-elevated); border: 1px solid rgba(255,255,255,0.12); border-radius: 24px; padding: 2rem; width: 100%; max-width: 540px; box-shadow: 0 30px 60px rgba(0,0,0,0.65); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); position: relative; overflow: hidden; max-height: 90vh; overflow-y: auto; }
+    .modal-dialog { background: var(--bg-surface-elevated); border: 1px solid rgba(255,255,255,0.12); border-radius: 24px; padding: 2rem 2rem 1.75rem 2rem; width: 100%; max-width: 540px; box-shadow: 0 30px 60px rgba(0,0,0,0.65); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); position: relative; overflow: hidden; max-height: 90vh; overflow-y: auto; }
+    .modal-close-x {
+      position: absolute;
+      top: 0.9rem;
+      right: 0.9rem;
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 20;
+      transition: var(--transition);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .modal-close-x:hover, .modal-close-x:active {
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.38);
+      color: #ffffff;
+    }
 
     .badge { display: inline-flex; align-items: center; padding: 0.22rem 0.6rem; border-radius: 7px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; }
     .badge-completed { background: var(--color-primary-dim); color: var(--color-primary); }
@@ -756,7 +783,14 @@
       .streak-column { flex-direction: column; }
       .form-row > .form-group { min-width: 100%; }
       .auth-card { padding: 2rem 1.5rem; }
-      .modal-dialog { padding: 1.35rem; }
+      .modal-overlay { padding: 1.25rem; }
+      .modal-dialog {
+        width: calc(100vw - 2.75rem);
+        max-width: 400px !important;
+        max-height: 78vh;
+        padding: 1.5rem 1.15rem 1.25rem 1.15rem;
+        border-radius: 20px;
+      }
       .btn { min-height: 42px; }
       #toast {
         bottom: calc(98px + env(safe-area-inset-bottom, 0px));
@@ -1684,22 +1718,33 @@
 
       isEventCompleted(evt, userWorkouts, userRoutines) {
         if (!evt || evt.status === 'cancelled') return false;
-        if (evt.status === 'completed') return true;
+        const norm = s => String(s || '').trim().toLowerCase();
         const dayWorkouts = userWorkouts.filter(w => w.date === evt.date);
-        const routine = userRoutines.find(r => r.name === evt.title);
+        const routine = userRoutines.find(r => norm(r.name) === norm(evt.title));
         if (routine && routine.exercises && routine.exercises.length > 0) {
-          return routine.exercises.every(ex => dayWorkouts.some(dw => dw.name === ex.name));
+          return routine.exercises.every((ex, idx) => {
+            const exCount = routine.exercises.slice(0, idx + 1).filter(e => norm(e.name) === norm(ex.name)).length;
+            const loggedCount = dayWorkouts.filter(dw => norm(dw.name) === norm(ex.name)).length;
+            return loggedCount >= exCount;
+          });
         }
-        return dayWorkouts.some(dw => dw.event_id === evt.id || dw.name.toLowerCase() === evt.title.toLowerCase());
+        if (evt.status === 'completed') return true;
+        return dayWorkouts.some(dw => dw.event_id === evt.id || norm(dw.name) === norm(evt.title));
       },
 
       getEventProgress(evt, userWorkouts, userRoutines) {
+        const norm = s => String(s || '').trim().toLowerCase();
         const dayWorkouts = userWorkouts.filter(w => w.date === evt.date);
-        const routine = userRoutines.find(r => r.name === evt.title);
+        const routine = userRoutines.find(r => norm(r.name) === norm(evt.title));
         if (routine && routine.exercises && routine.exercises.length > 0) {
           const total = routine.exercises.length;
-          const done = routine.exercises.filter(ex => dayWorkouts.some(dw => dw.name === ex.name)).length;
-          return { hasRoutine: true, routine, done, total, isCompleted: done === total && total > 0, isInProgress: done > 0 && done < total || evt.status === 'in_progress' };
+          let done = 0;
+          routine.exercises.forEach((ex, idx) => {
+            const exCount = routine.exercises.slice(0, idx + 1).filter(e => norm(e.name) === norm(ex.name)).length;
+            const loggedCount = dayWorkouts.filter(dw => norm(dw.name) === norm(ex.name)).length;
+            if (loggedCount >= exCount) done++;
+          });
+          return { hasRoutine: true, routine, done, total, isCompleted: done === total && total > 0, isInProgress: (done > 0 && done < total) || evt.status === 'in_progress' };
         }
         const isCompleted = this.isEventCompleted(evt, userWorkouts, userRoutines);
         return { hasRoutine: false, routine: null, done: isCompleted ? 1 : 0, total: 1, isCompleted, isInProgress: evt.status === 'in_progress' && !isCompleted };
@@ -2550,6 +2595,31 @@
       const root = document.getElementById('modal-root');
       if (root) root.innerHTML = '';
     }
+
+    // Automatically inject an upper-right 'X' close button into any active pop-up dialog
+    (function setupModalCloseButtonObserver() {
+      const root = document.getElementById('modal-root');
+      if (!root) return;
+      const observer = new MutationObserver(() => {
+        const dialogs = root.querySelectorAll('.modal-dialog');
+        dialogs.forEach(dialog => {
+          if (dialog.closest('#celebration-overlay')) return;
+          if (!dialog.querySelector('.modal-close-x')) {
+            const closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.className = 'modal-close-x';
+            closeBtn.setAttribute('aria-label', 'Close pop-up');
+            closeBtn.innerHTML = '&times;';
+            closeBtn.onclick = (e) => {
+              e.stopPropagation();
+              closeModal();
+            };
+            dialog.appendChild(closeBtn);
+          }
+        });
+      });
+      observer.observe(root, { childList: true, subtree: true });
+    })();
 
     function showConfirmModal(message, onConfirm, confirmLabel = 'Delete') {
       const root = document.getElementById('modal-root');
@@ -5221,14 +5291,16 @@
     }, 'Delete Routine');
 
     window.toggleRoutineExercise = async (checkbox) => {
-      const exName = checkbox.getAttribute('data-name');
+      const exName = (checkbox.getAttribute('data-name') || '').trim();
       const exSets = checkbox.getAttribute('data-sets');
       const exReps = checkbox.getAttribute('data-reps');
       const exWeight = checkbox.getAttribute('data-weight');
       const dateStr = checkbox.getAttribute('data-date') || getLocalDateStr();
-      const durInput = document.getElementById('modal-routine-duration');
+      const eventIdAttr = checkbox.getAttribute('data-event-id');
+      const durInput = document.getElementById('modal-routine-duration') || document.getElementById('evt-complete-duration');
       const durationMin = durInput && durInput.value ? durInput.value : null;
 
+      checkbox.disabled = true;
       try {
         if (checkbox.checked) {
           const w = await api.createWorkout({
@@ -5237,23 +5309,40 @@
             reps: exReps,
             weight: exWeight,
             duration_minutes: durationMin,
+            event_id: eventIdAttr ? parseInt(eventIdAttr, 10) : null,
             date: dateStr
           });
           checkbox.dataset.workoutId = w.id;
-          checkbox.nextElementSibling.style.color = 'var(--color-primary)';
+          if (checkbox.nextElementSibling) {
+            checkbox.nextElementSibling.style.color = 'var(--color-primary)';
+          }
           showToast(`Logged ${exName} for ${dateStr}!`);
         } else {
-          if (checkbox.dataset.workoutId) {
-            await api.deleteWorkout(parseInt(checkbox.dataset.workoutId, 10));
+          let targetWorkoutId = checkbox.dataset.workoutId ? parseInt(checkbox.dataset.workoutId, 10) : null;
+          if (!targetWorkoutId) {
+            const allWorkouts = await api.getWorkouts();
+            const matched = allWorkouts.find(w => w.date === dateStr && String(w.name || '').trim().toLowerCase() === exName.toLowerCase());
+            if (matched) targetWorkoutId = matched.id;
+          }
+          if (targetWorkoutId) {
+            await api.deleteWorkout(targetWorkoutId);
           }
           checkbox.dataset.workoutId = '';
-          checkbox.nextElementSibling.style.color = 'var(--text-white)';
+          if (checkbox.nextElementSibling) {
+            checkbox.nextElementSibling.style.color = 'var(--text-white)';
+          }
           showToast(`Removed ${exName} from ${dateStr}.`);
         }
-        renderApp();
+
+        if (eventIdAttr && document.getElementById('evt-routine-progress-header')) {
+          await window.openEventManageModal(parseInt(eventIdAttr, 10));
+        }
+        await renderApp({ isRouteChange: false, preserveScroll: true });
       } catch (e) {
         showToast(e.message, 'error');
         checkbox.checked = !checkbox.checked;
+      } finally {
+        if (checkbox && checkbox.isConnected) checkbox.disabled = false;
       }
     };
 
@@ -5261,23 +5350,26 @@
       if (!routine) return;
       const workouts = await api.getWorkouts();
       const dayWorkouts = workouts.filter(w => w.date === dateStr);
+      const usedWorkoutIds = new Set();
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="document.getElementById('modal-root').innerHTML = ''">
           <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
-            <h3 class="card-title" style="margin-top:0; font-size:1.45rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
-            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.88rem;">Completion Date: <strong>${dateStr}</strong> &bull; Check off completed exercises below</p>
+            <h3 class="card-title" style="margin-top:0; padding-right:2.2rem; font-size:1.35rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
+            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.85rem;">Completion Date: <strong>${dateStr}</strong> &bull; Tap any exercise to log it</p>
             <div class="form-group" style="margin-bottom:1rem;">
               <div class="form-label-wrap"><label for="modal-routine-duration">Duration per Exercise (min)</label><span class="label-optional">(Optional)</span></div>
               <input type="number" id="modal-routine-duration" min="1" />
             </div>
-            <div style="display:flex; flex-direction:column; gap:0.65rem;">
+            <div style="display:flex; flex-direction:column; gap:0.55rem;">
               ${routine.exercises && routine.exercises.length ? routine.exercises.map(ex => {
-                const matched = dayWorkouts.find(w => w.name === ex.name);
+                const normName = String(ex.name || '').trim().toLowerCase();
+                const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
+                if (matched) usedWorkoutIds.add(matched.id);
                 const isChecked = !!matched;
                 const wId = matched ? matched.id : '';
                 return `
-                  <label style="display:flex; align-items:center; gap:0.9rem; padding:1rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:14px; cursor:pointer; transition:var(--transition);">
+                  <label style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${isChecked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
                     <input type="checkbox" class="custom-checkbox" ${isChecked ? 'checked' : ''} 
                            data-workout-id="${wId}"
                            data-name="${escapeHtml(ex.name)}"
@@ -5286,9 +5378,9 @@
                            data-weight="${ex.weight || ''}"
                            data-date="${dateStr}"
                            onchange="window.toggleRoutineExercise(this)" />
-                    <div style="font-weight:600; font-size:0.98rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
+                    <div style="font-weight:600; font-size:0.92rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
                       ${escapeHtml(ex.name)}
-                      <span style="font-weight:400; font-size:0.82rem; color:var(--text-muted); margin-left:0.5rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
+                      <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.4rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
                     </div>
                   </label>
                 `;
@@ -5314,6 +5406,7 @@
       const prog = api.getEventProgress(evt, workouts, routines);
       const { routine, isCompleted, isInProgress } = prog;
       const dayWorkouts = workouts.filter(w => w.date === evt.date);
+      const usedWorkoutIds = new Set();
 
       const badgeCls = evt.status === 'cancelled'
         ? 'badge-cancelled'
@@ -5334,36 +5427,39 @@
       root.innerHTML = `
         <div class="modal-overlay" onclick="document.getElementById('modal-root').innerHTML = ''">
           <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.4rem;">
-              <h3 class="card-title" style="margin:0; font-size:1.4rem; font-family:var(--font-display);">${escapeHtml(evt.title)}</h3>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem; margin-bottom:0.4rem; padding-right:2.2rem;">
+              <h3 class="card-title" style="margin:0; font-size:1.3rem; font-family:var(--font-display);">${escapeHtml(evt.title)}</h3>
               <span class="badge ${badgeCls}">${badgeTxt}</span>
             </div>
-            <p style="color:var(--text-dim); margin-bottom:1.15rem; font-size:0.85rem;">
+            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.82rem;">
               Scheduled Date: <strong>${evt.date}</strong>${evt.scheduled_time ? ` at <strong>${evt.scheduled_time}</strong>` : ''}${evt.estimated_duration ? ` &bull; Est. ${evt.estimated_duration} min` : ''}
             </p>
 
             ${evt.status !== 'cancelled' ? `
               ${routine && routine.exercises && routine.exercises.length > 0 ? `
-                <div style="margin-bottom:1.15rem;">
-                  <div style="font-size:0.78rem; font-weight:700; color:var(--text-muted); margin-bottom:0.55rem; text-transform:uppercase;">Routine Exercises (${prog.done}/${prog.total} Completed)</div>
-                  <div style="display:flex; flex-direction:column; gap:0.55rem;">
+                <div style="margin-bottom:1.1rem;">
+                  <div id="evt-routine-progress-header" style="font-size:0.76rem; font-weight:700; color:var(--text-muted); margin-bottom:0.5rem; text-transform:uppercase;">Routine Exercises (${prog.done}/${prog.total} Completed)</div>
+                  <div style="display:flex; flex-direction:column; gap:0.5rem;">
                     ${routine.exercises.map(ex => {
-                      const matched = dayWorkouts.find(w => w.name === ex.name);
+                      const normName = String(ex.name || '').trim().toLowerCase();
+                      const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
+                      if (matched) usedWorkoutIds.add(matched.id);
                       const checked = !!matched;
                       const wId = matched ? matched.id : '';
                       return `
-                        <label style="display:flex; align-items:center; gap:0.85rem; padding:0.85rem 1rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px; cursor:pointer;">
+                        <label style="display:flex; align-items:center; gap:0.75rem; padding:0.7rem 0.9rem; background:var(--bg-input); border:1px solid ${checked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
                           <input type="checkbox" class="custom-checkbox" ${checked ? 'checked' : ''}
                                  data-workout-id="${wId}"
+                                 data-event-id="${evt.id}"
                                  data-name="${escapeHtml(ex.name)}"
                                  data-sets="${ex.sets || ''}"
                                  data-reps="${ex.reps || ''}"
                                  data-weight="${ex.weight || ''}"
                                  data-date="${evt.date}"
-                                 onchange="window.toggleRoutineExercise(this); setTimeout(() => window.openEventManageModal(${evt.id}), 120);" />
-                          <div style="font-weight:600; color:${checked ? 'var(--color-primary)' : 'var(--text-white)'}">
+                                 onchange="window.toggleRoutineExercise(this)" />
+                          <div style="font-weight:600; font-size:0.9rem; color:${checked ? 'var(--color-primary)' : 'var(--text-white)'}">
                             ${escapeHtml(ex.name)}
-                            <span style="font-weight:400; font-size:0.8rem; color:var(--text-muted); margin-left:0.4rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
+                            <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.35rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
                           </div>
                         </label>
                       `;
@@ -5529,23 +5625,26 @@
       if (!routine) return;
       const workouts = await api.getWorkouts();
       const dayWorkouts = workouts.filter(w => w.date === dateStr);
+      const usedWorkoutIds = new Set();
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="closeModal()">
           <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
-            <h3 class="card-title" style="margin-top:0; font-size:1.45rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
-            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.88rem;">Completion Date: <strong>${dateStr}</strong> &bull; Check off completed exercises below</p>
+            <h3 class="card-title" style="margin-top:0; padding-right:2.2rem; font-size:1.35rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
+            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.85rem;">Completion Date: <strong>${dateStr}</strong> &bull; Check off completed exercises below</p>
             <div class="form-group" style="margin-bottom:1rem;">
               <div class="form-label-wrap"><label for="modal-routine-duration">Duration per Exercise (min)</label><span class="label-optional">(Optional)</span></div>
               <input type="number" id="modal-routine-duration" min="1" />
             </div>
-            <div style="display:flex; flex-direction:column; gap:0.65rem;">
+            <div style="display:flex; flex-direction:column; gap:0.55rem;">
               ${routine.exercises && routine.exercises.length ? routine.exercises.map(ex => {
-                const matched = dayWorkouts.find(w => w.name === ex.name);
+                const normName = String(ex.name || '').trim().toLowerCase();
+                const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
+                if (matched) usedWorkoutIds.add(matched.id);
                 const isChecked = !!matched;
                 const wId = matched ? matched.id : '';
                 return `
-                  <label style="display:flex; align-items:center; gap:0.9rem; padding:1rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:14px; cursor:pointer; transition:var(--transition);">
+                  <label style="display:flex; align-items:center; gap:0.75rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${isChecked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; cursor:pointer; transition:var(--transition);">
                     <input type="checkbox" class="custom-checkbox" ${isChecked ? 'checked' : ''} 
                            data-workout-id="${wId}"
                            data-name="${escapeHtml(ex.name)}"
@@ -5554,9 +5653,9 @@
                            data-weight="${ex.weight || ''}"
                            data-date="${dateStr}"
                            onchange="window.toggleRoutineExercise(this)" />
-                    <div style="font-weight:600; font-size:0.98rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
+                    <div style="font-weight:600; font-size:0.92rem; transition:color 0.2s; color:${isChecked ? 'var(--color-primary)' : 'var(--text-white)'}">
                       ${escapeHtml(ex.name)}
-                      <span style="font-weight:400; font-size:0.82rem; color:var(--text-muted); margin-left:0.5rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
+                      <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.4rem;">${ex.sets || 0}x${ex.reps || 0} @ ${ex.weight || 0}lbs</span>
                     </div>
                   </label>
                 `;
