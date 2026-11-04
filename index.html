@@ -630,7 +630,7 @@
     .badge-scheduled { background: rgba(255,255,255,0.07); color: var(--text-muted); }
     .badge-cancelled { background: rgba(239, 68, 68, 0.15); color: var(--color-danger); text-decoration: line-through; }
 
-    /* Subtle Top 2px Loading Indicator (only visible on slower operations) */
+    /* Subtle Top 2px Loading Indicator */
     #top-loading-bar {
       position: fixed;
       top: 0;
@@ -675,7 +675,7 @@
       to { transform: rotate(360deg); }
     }
 
-    /* Subtle, Restrained Route Transitions (150ms ease-out, 3px vertical shift, no opacity:0 blanking on updates) */
+    /* Subtle Route Transitions */
     .animate-fade-in {
       opacity: 1;
       transform: none;
@@ -727,7 +727,7 @@
       .heatmap-right { width: 100%; border-left: none; border-top: 1px solid var(--border-color); padding-left: 0; padding-top: 1.25rem; flex-direction: row; justify-content: space-around; text-align: center; }
     }
 
-    /* Mobile Adaptations (Strictly Scoped to Mobile <= 768px) */
+    /* Mobile Adaptations */
     @media (max-width: 768px) {
       .layout-wrapper { flex-direction: column; }
       .sidebar { display: none !important; }
@@ -753,7 +753,6 @@
         left: 1rem;
       }
 
-      /* 1. Mobile Overview Header: Date at top-right same level as Overview text, hide Log Meal & Goals buttons */
       .overview-page-header {
         flex-wrap: nowrap !important;
         justify-content: space-between !important;
@@ -771,7 +770,6 @@
         display: none !important;
       }
 
-      /* 2. Mobile Weekly Training Progress Graph Alignment */
       .weekly-chart-wrapper {
         background: var(--bg-input);
         border: 1px solid var(--border-color);
@@ -791,7 +789,6 @@
         max-width: 92%;
       }
 
-      /* 3. Mobile Consistency Card: 2nd line subtext & swipe ONLY on the month dates grid */
       .hm-inspect-subtext {
         display: block;
         margin-top: 0.2rem;
@@ -828,7 +825,6 @@
         scroll-snap-align: start;
       }
 
-      /* Backdrop for closing Quick Actions when tapping outside */
       .mobile-quick-actions-backdrop {
         display: block;
         position: fixed;
@@ -846,7 +842,6 @@
         pointer-events: auto;
       }
 
-      /* Floating Bottom Navigation Dock Container */
       .mobile-nav-dock-root {
         display: flex;
         align-items: center;
@@ -862,7 +857,6 @@
         pointer-events: auto;
       }
 
-      /* Main 4-Icon Rounded Capsule */
       .mobile-dock-capsule {
         position: relative;
         display: grid;
@@ -878,7 +872,6 @@
         box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65), 0 2px 10px rgba(0, 0, 0, 0.45);
       }
 
-      /* Smoothly Sliding Active Indicator Inside Capsule (Greenish Faded Highlight) */
       .mobile-dock-active-pill {
         position: absolute;
         top: 5px;
@@ -917,7 +910,6 @@
         color: var(--color-primary);
       }
 
-      /* Separate Circular Plus (+) Action Button */
       .mobile-dock-plus-btn {
         position: relative;
         width: 58px;
@@ -946,7 +938,6 @@
         color: var(--color-primary);
       }
 
-      /* Smooth Plus-to-X Icon Crossfade & Rotation */
       .mobile-dock-plus-icon,
       .mobile-dock-close-icon {
         position: absolute;
@@ -972,7 +963,6 @@
         transform: rotate(0deg) scale(1);
       }
 
-      /* Expandable Floating Quick Actions Panel (Anchored Above the Dock) */
       .mobile-quick-actions-panel {
         position: absolute;
         bottom: calc(100% + 12px);
@@ -1006,7 +996,6 @@
         visibility: visible;
       }
 
-      /* Clean Text-Only Action Buttons Inside Quick Actions Panel (No Icons, No Subtext) */
       .mobile-quick-action-card {
         width: 100%;
         text-align: left;
@@ -1036,15 +1025,7 @@
         color: #ffffff;
         line-height: 1.25;
       }
-      .mobile-quick-action-desc {
-        font-family: var(--font-sans);
-        font-size: 0.77rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        line-height: 1.35;
-      }
 
-      /* Fit smaller mobile screens (e.g. 320px-350px) without overflow */
       @media (max-width: 360px) {
         .mobile-dock-capsule {
           grid-template-columns: repeat(4, 50px);
@@ -1169,7 +1150,6 @@
               const maxTaskId = this.state.tasks.reduce((m, t) => Math.max(m, Number(t.id) || 0), 0);
               this.state.nextIds.task = maxTaskId + 1;
             }
-            // Ensure backwards compatibility for user targets & task categories
             this.state.users.forEach(u => {
               if (!u.targets) {
                 u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null };
@@ -1184,7 +1164,6 @@
         } catch (e) {
           this.state = defaultDbState();
         }
-        // Remove legacy auto-login token so unauthenticated visitors always start at the Log In / Register screen
         if (localStorage.getItem('hench_session') === 'mock_token_12345') {
           localStorage.removeItem('hench_session');
         }
@@ -1206,7 +1185,6 @@
 
     db.load();
 
-    // Cross-tab synchronization
     window.addEventListener('storage', (e) => {
       if (e.key === DB_STORAGE_KEY || e.key === 'hench_session') {
         db.load();
@@ -1215,7 +1193,7 @@
     });
 
     // =========================================================================
-    // AUTHORITATIVE API & METRIC CALCULATION ENGINE
+    // API & METRIC ENGINE
     // =========================================================================
     function parseOptionalNumber(val, isFloat = false) {
       if (val === undefined || val === null || String(val).trim() === '') return null;
@@ -1309,7 +1287,6 @@
         return true;
       },
 
-      // --- USER GOALS & TARGETS ---
       async getUserTargets() {
         const u = db.getAuthenticatedUser();
         if (!u) return { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null };
@@ -1331,7 +1308,6 @@
         return u.targets;
       },
 
-      // --- MEALS ---
       async getMeals() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1390,7 +1366,6 @@
         db.save();
       },
 
-      // --- WORKOUTS ---
       async getWorkouts() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1463,7 +1438,6 @@
         db.save();
       },
 
-      // --- ROUTINES ---
       async getRoutines() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1507,7 +1481,6 @@
         return r;
       },
 
-      // --- CALENDAR EVENTS ---
       async getEvents() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1522,7 +1495,6 @@
         const title = (data.title || '').trim();
         if (!title || !data.date) throw new Error('Routine/Session title and date are required');
 
-        // Prevent accidental duplicate active session with same title on same date
         const existingDuplicate = db.state.events.find(
           e => e.user_id === u.id && e.date === data.date && e.title.toLowerCase() === title.toLowerCase() && e.status !== 'cancelled'
         );
@@ -1537,7 +1509,7 @@
           date: data.date,
           scheduled_time: data.scheduled_time || null,
           estimated_duration: parseOptionalNumber(data.estimated_duration),
-          status: 'scheduled', // 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+          status: 'scheduled',
           completed_workout_id: null,
           created_at: new Date().toISOString()
         };
@@ -1570,7 +1542,6 @@
         if (!u) throw new Error('Unauthorized');
         const evt = db.state.events.find(e => e.id === eventId && e.user_id === u.id);
         if (!evt) throw new Error('Scheduled session not found');
-        // Starting a workout marks it 'in_progress', NEVER 'completed' automatically
         if (evt.status === 'scheduled') {
           evt.status = 'in_progress';
           db.save();
@@ -1693,7 +1664,6 @@
         return { hasRoutine: false, routine: null, done: isCompleted ? 1 : 0, total: 1, isCompleted, isInProgress: evt.status === 'in_progress' && !isCompleted };
       },
 
-      // --- DASHBOARD AGGREGATION ENGINE ---
       async getDashboardStats(selectedDateStr) {
         const todayStr = getLocalDateStr();
         const targetDate = selectedDateStr || todayStr;
@@ -1704,7 +1674,6 @@
         const allRoutines = await this.getRoutines();
         const allEvents = await this.getEvents();
 
-        // 1. Daily Nutrition Totals & Goal Progress (Strict null vs 0 handling + serving multiplier)
         const dayMeals = allMeals.filter(m => m.date === targetDate);
         const calcMacroCard = (field, unit, targetVal) => {
           const hasTarget = targetVal !== null && targetVal !== undefined && Number(targetVal) > 0;
@@ -1804,12 +1773,11 @@
           mealCount: dayMeals.length
         };
 
-        // 2. Weekly Training Progress (Mon–Sun of the selected week)
         const mondayStr = getMondayOfWeek(targetDate);
         const sundayStr = addDays(mondayStr, 6);
         const prevMondayStr = addDays(mondayStr, -7);
         const weekLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-        const activeMetric = window.weeklyChartMetric || 'workouts'; // 'workouts' | 'duration' | 'volume'
+        const activeMetric = window.weeklyChartMetric || 'workouts';
 
         const weekDaysData = [];
         let thisWeekWorkoutsCount = 0;
@@ -1848,7 +1816,6 @@
           prevWeekTotalVolume += dw.reduce((acc, w) => acc + ((Number(w.sets) || 0) * (Number(w.reps) || 0) * (Number(w.weight) || 0)), 0);
         }
 
-        // Valid Week-over-Week comparison (never fabricate misleading % when prior week has 0 data)
         let comparisonText = 'No prior week data for comparison';
         let comparisonBadge = '—';
         if (activeMetric === 'duration') {
@@ -1898,7 +1865,6 @@
         const pathD = `M ${svgPoints.map(p => `${p.x},${p.y}`).join(' L ')}`;
         const areaD = `${pathD} L ${svgPoints[6].x},135 L ${svgPoints[0].x},135 Z`;
 
-        // 3. Current Streak & Longest Streak
         const activeDatesSet = new Set(allWorkouts.map(w => w.date).filter(Boolean));
         const sortedActiveDates = Array.from(activeDatesSet).sort();
 
@@ -1930,7 +1896,6 @@
           checkCursor = addDays(checkCursor, -1);
         }
 
-        // 4. Consistency 6-Month Half-Year Heatmap (Distinguishing Past Inactive, Completed, and Future Dates)
         const refDateObj = parseLocalDate(targetDate);
         const defaultYear = refDateObj.getFullYear();
         const defaultHalf = refDateObj.getMonth() < 6 ? 0 : 1;
@@ -1988,7 +1953,6 @@
           `);
         }
 
-        // 5. This Month's Consistency & Best Month
         const currentMonthPrefix = todayStr.slice(0, 7);
         const computeMonthConsistency = (monthPrefix, isCurrentMonth) => {
           const eligible = allEvents.filter(e => {
@@ -2029,18 +1993,15 @@
           }
         });
 
-        // 6. Selected Date Workouts & Events
         const selectedDateWorkouts = allWorkouts.filter(w => w.date === targetDate);
         const selectedDateDuration = selectedDateWorkouts.reduce((s, w) => s + (Number(w.duration_minutes) || 0), 0);
         const selectedDateEvents = allEvents.filter(e => e.date === targetDate && e.status !== 'cancelled');
 
-        // 7. Upcoming Sessions (date >= todayStr, not cancelled, not completed)
         const upcomingSessions = allEvents
           .filter(e => e.date >= todayStr && e.status !== 'cancelled' && !this.isEventCompleted(e, allWorkouts, allRoutines))
           .sort((a, b) => a.date.localeCompare(b.date) || (a.scheduled_time || '').localeCompare(b.scheduled_time || ''))
           .slice(0, 5);
 
-        // 8. Recent Completed Workout Activity (sorted most recent first, up to 6 entries)
         const recentWorkouts = allWorkouts.slice(0, 6);
 
         return {
@@ -2090,7 +2051,7 @@
       },
 
       // =======================================================================
-      // PERSONAL TASKS & RECURRENCE ENGINE (Strictly Separate from Fitness Data)
+      // PERSONAL TASKS & RECURRENCE ENGINE
       // =======================================================================
       async getTaskCategories() {
         const u = db.getAuthenticatedUser();
@@ -2162,7 +2123,6 @@
           }
           return getLocalDateStr(d);
         }
-        // Default: day_of_month (clamped safely to daysInMonth for 28/29/30/31 handling)
         const targetDay = Math.min(Math.max(1, Number(preferredDay) || 1), daysInMonth);
         return `${year}-${String(monthIdx0 + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
       },
@@ -2279,7 +2239,6 @@
           end_date: data.recurrence_end_date || null
         };
 
-        // If creating a monthly rule task, align its initial due date if requested
         if (recType === 'monthly' && dueDate && (recurrence.monthly_rule === 'first_day' || recurrence.monthly_rule === 'last_day' || recurrence.monthly_rule === 'last_working_day')) {
           const parsed = parseLocalDate(dueDate);
           dueDate = this.getMonthlyDateForRule(parsed.getFullYear(), parsed.getMonth(), recurrence.monthly_rule, recurrence.day_of_month);
@@ -2294,8 +2253,8 @@
           category: (data.category || '').trim(),
           due_date: dueDate || null,
           due_time: data.due_time ? data.due_time.trim() : null,
-          priority: data.priority || 'none', // 'none' | 'low' | 'medium' | 'high'
-          status: 'active', // 'active' | 'completed'
+          priority: data.priority || 'none',
+          status: 'active',
           completed_at: null,
           recurrence,
           skipped_dates: [],
@@ -2323,7 +2282,6 @@
 
         const isRecurring = task.recurrence && task.recurrence.type && task.recurrence.type !== 'none';
 
-        // If user chose to update ONLY a single occurrence of a recurring task, detach that occurrence as a standalone task
         if (isRecurring && editScope === 'occurrence') {
           const targetOccDate = occurrenceDate || task.due_date;
           if (targetOccDate === task.due_date) {
@@ -2355,7 +2313,6 @@
           return detached;
         }
 
-        // Otherwise update the task / series directly
         task.title = title;
         if (data.description !== undefined) task.description = (data.description || '').trim();
         if (data.category !== undefined) task.category = (data.category || '').trim();
@@ -2405,7 +2362,6 @@
           if (isRecurring && task.status === 'active') {
             const completedDueDate = occurrenceDate || task.due_date || getLocalDateStr();
 
-            // 1. Record a permanent completed occurrence in history so past completions are never lost
             const completedRecord = {
               id: db.state.nextIds.task++,
               user_id: u.id,
@@ -2429,7 +2385,6 @@
             };
             db.state.tasks.unshift(completedRecord);
 
-            // 2. Advance the recurring series to its next occurrence (or skip the future projected date)
             if (occurrenceDate && occurrenceDate > task.due_date) {
               if (!Array.isArray(task.skipped_dates)) task.skipped_dates = [];
               if (!task.skipped_dates.includes(occurrenceDate)) task.skipped_dates.push(occurrenceDate);
@@ -2441,12 +2396,10 @@
               }
               if (nextDue && (!task.recurrence.end_date || nextDue <= task.recurrence.end_date)) {
                 task.due_date = nextDue;
-                // Reset subtasks for the new occurrence
                 if (Array.isArray(task.subtasks)) {
                   task.subtasks = task.subtasks.map(s => ({ ...s, done: false }));
                 }
               } else {
-                // Series has reached its end_date
                 task.status = 'completed';
                 task.completed_at = nowIso;
               }
@@ -2462,7 +2415,6 @@
             return { task, advancedTo: null };
           }
         } else {
-          // Reopen a completed task
           task.status = 'active';
           task.completed_at = null;
           task.updated_at = nowIso;
@@ -2507,7 +2459,6 @@
           return;
         }
 
-        // Delete the task (or active recurring series) while preserving completed history records
         db.state.tasks = db.state.tasks.filter(t => !(t.id === id && t.user_id === u.id));
         db.save();
       },
@@ -2687,7 +2638,6 @@
       }
     });
 
-    // Combined Lucide React Icon Set for the Mobile Navigation Dock (House, Ham, Dumbbell, BellRing, Plus, X)
     const LucideDockIcons = {
       House: `<svg class="lucide lucide-house" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`,
       Ham: `<svg class="lucide lucide-ham" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.144 21.144A7.274 10.445 45 1 0 2.856 10.856"/><path d="M13.144 21.144A7.274 4.365 45 0 0 2.856 10.856a7.274 4.365 45 0 0 10.288 10.288"/><path d="M16.565 10.435 18.6 8.4a2.501 2.501 0 1 0 1.65-4.65 2.5 2.5 0 1 0-4.66 1.66l-2.024 2.025"/><path d="m8.5 16.5-1-1"/></svg>`,
@@ -2708,7 +2658,7 @@
     };
 
     // =========================================================================
-    // DASHBOARD (OVERVIEW) VIEW — REORGANIZED 6-PART HIERARCHY WITH DYNAMIC MACRO CARDS
+    // VIEWS
     // =========================================================================
     async function renderDashboard(user) {
       const todayStr = getLocalDateStr();
@@ -2730,7 +2680,6 @@
         headerPrimaryBtnHtml = `<button class="btn btn-primary btn-sm overview-log-meal-btn" onclick="window.navigate('/nutrition')">+ Log Meal</button>`;
       }
 
-      // Dynamic 3-State Nutrition Card Renderer (Below = Dark, Exact 100% = Green, Over = Subtle Amber)
       const renderMacroCard = (title, m) => {
         const barWidth = m.hasTarget ? Math.min(100, Math.max(0, m.pct)) : (m.hasData ? 100 : 0);
         const cardStateClass = m.hasTarget && m.hasData
@@ -3185,9 +3134,6 @@
       `;
     }
 
-    // =========================================================================
-    // NUTRITION & WORKOUTS VIEWS
-    // =========================================================================
     async function renderNutrition() {
       const meals = await api.getMeals();
       const targets = await api.getUserTargets();
@@ -3314,7 +3260,6 @@
       `;
     }
 
-    // Track unsaved form input drafts & whether a route has active user input
     const routeFormDrafts = {};
     const routeDirtyState = {};
 
@@ -3405,7 +3350,6 @@
       renderApp({ isRouteChange, preserveScroll: shouldPreserveScroll });
     };
 
-    // --- Create / Edit Routine Modal ---
     window.openRoutineEditorModal = async (id = null, autoAdd = false) => {
       const routines = await api.getRoutines();
       let r = id ? routines.find(x => x.id === id) : null;
@@ -3447,7 +3391,6 @@
               </div>
 
               <div id="re-exercises-container" style="display:flex; flex-direction:column; gap:0.6rem; max-height:45vh; overflow-y:auto; padding-right:0.5rem; margin-bottom:1.5rem;">
-                 <!-- Rendered dynamically -->
               </div>
 
               <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
@@ -3661,7 +3604,6 @@
           </div>
         </div>
 
-        <!-- Create Routine Card (Inside Card CTA Retained) -->
         <div class="card animate-fade-in" style="animation-delay:0.05s;">
           <div class="card-title">Create New Routine</div>
           <form id="routine-form">
@@ -3723,9 +3665,6 @@
       `;
     }
 
-    // =========================================================================
-    // CALENDAR VIEW
-    // =========================================================================
     async function renderCalendar() {
       const events = await api.getEvents();
       const routines = await api.getRoutines();
@@ -3879,9 +3818,6 @@
       `;
     }
 
-    // =========================================================================
-    // TASKS VIEW — PERSONAL PRODUCTIVITY & TASK MANAGEMENT SYSTEM
-    // =========================================================================
     function getPriorityWeight(p) {
       if (p === 'high') return 3;
       if (p === 'medium') return 2;
@@ -3975,7 +3911,7 @@
 
     async function renderTasks() {
       const todayStr = getLocalDateStr();
-      const subView = window.tasksSubView || 'today'; // 'today' | 'upcoming' | 'calendar' | 'all' | 'completed'
+      const subView = window.tasksSubView || 'today';
       const selectedDate = window.tasksSelectedDate || todayStr;
       const allTasks = await api.getTasks();
       const categories = await api.getTaskCategories();
@@ -3985,7 +3921,6 @@
         .filter(t => t.status === 'completed')
         .sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at));
 
-      // Calculate top-level summary metrics for Today
       const overdueTasks = activeTasks
         .filter(t => t.due_date && t.due_date < todayStr)
         .sort((a, b) => a.due_date.localeCompare(b.due_date) || getPriorityWeight(b.priority) - getPriorityWeight(a.priority));
@@ -4002,7 +3937,6 @@
       const totalTodayPool = dueTodayActive.length + completedToday.length;
       const todayProgressPct = totalTodayPool > 0 ? Math.round((completedToday.length / totalTodayPool) * 100) : 0;
 
-      // Check due in-app reminders
       const nowLocalIso = (() => {
         const n = new Date();
         const pad = v => String(v).padStart(2, '0');
@@ -4010,12 +3944,10 @@
       })();
       const dueReminders = activeTasks.filter(t => t.reminder_at && !t.reminder_dismissed && t.reminder_at <= nowLocalIso);
 
-      // Build view-specific content
       let viewBodyHTML = '';
 
       if (subView === 'today') {
         const isViewingToday = selectedDate === todayStr;
-        // Project recurring instances if inspecting a future date in Today view
         const projectedForSelected = selectedDate > todayStr
           ? api.projectRecurringInstancesForRange(activeTasks, selectedDate, selectedDate)
           : [];
@@ -4036,7 +3968,6 @@
         const showCompletedToday = window.tasksShowCompletedToday !== false;
 
         viewBodyHTML = `
-          <!-- Date Bar & Daily Completion Summary -->
           <div class="card" style="padding:1.1rem 1.35rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.85rem;">
               <div>
@@ -4117,7 +4048,7 @@
       } else if (subView === 'upcoming') {
         const upCat = window.tasksUpcomingCategory || 'all';
         const upPri = window.tasksUpcomingPriority || 'all';
-        const upRange = window.tasksUpcomingRange || 'all'; // 'all' | '7d' | '30d' | '90d'
+        const upRange = window.tasksUpcomingRange || 'all';
         const upIncCompleted = !!window.tasksUpcomingIncludeCompleted;
 
         const tomorrowStr = addDays(todayStr, 1);
@@ -4129,7 +4060,6 @@
         else if (upRange === '30d') rangeLimitStr = addDays(todayStr, 30);
         else if (upRange === '90d') rangeLimitStr = addDays(todayStr, 90);
 
-        // Project recurring instances over the upcoming horizon (up to 90 days out) so monthly bills/errands show up in Upcoming
         const projHorizon = upRange === '7d' ? addDays(todayStr, 7) : upRange === '30d' ? addDays(todayStr, 30) : addDays(todayStr, 90);
         const projectedUpcoming = api.projectRecurringInstancesForRange(activeTasks, tomorrowStr, projHorizon);
 
@@ -4213,9 +4143,9 @@
           `}
         `;
       } else if (subView === 'calendar') {
-        const calMode = window.tasksCalendarMode || 'month'; // 'month' | 'agenda'
+        const calMode = window.tasksCalendarMode || 'month';
         const calCat = window.tasksCalCategory || 'all';
-        const calStatus = window.tasksCalStatus || 'all'; // 'all' | 'active' | 'completed'
+        const calStatus = window.tasksCalStatus || 'all';
 
         const selDateObj = parseLocalDate(selectedDate);
         const calYear = window.tasksCalYear !== undefined ? window.tasksCalYear : selDateObj.getFullYear();
@@ -4227,7 +4157,6 @@
         const monthStartStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
         const monthEndStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
-        // Project recurring instances across the displayed month so monthly bills/tasks appear on their exact dates
         const projectedMonthTasks = api.projectRecurringInstancesForRange(activeTasks, monthStartStr, monthEndStr);
 
         const combinedCalPool = [
@@ -4281,13 +4210,12 @@
           `;
         }
 
-        // Tasks for the currently selected date in the side panel
         const projectedForSelected = selectedDate > todayStr
           ? api.projectRecurringInstancesForRange(activeTasks, selectedDate, selectedDate)
           : [];
         const selectedDateTasks = [
           ...activeTasks.filter(t => t.due_date === selectedDate),
-          ...projectedForSelected.filter(p => ! projectedMonthTasks.some(pm => pm.source_task_id === p.source_task_id && pm.due_date === p.due_date && selectedDate >= monthStartStr && selectedDate <= monthEndStr)),
+          ...projectedForSelected.filter(p => !projectedMonthTasks.some(pm => pm.source_task_id === p.source_task_id && pm.due_date === p.due_date && selectedDate >= monthStartStr && selectedDate <= monthEndStr)),
           ...(selectedDate >= monthStartStr && selectedDate <= monthEndStr ? projectedMonthTasks.filter(p => p.due_date === selectedDate) : []),
           ...completedTasks.filter(t => t.due_date === selectedDate)
         ].filter(t => {
@@ -4297,7 +4225,6 @@
           return true;
         });
 
-        // Deduplicate projected occurrences if needed
         const seenKeys = new Set();
         const uniqueSelectedDateTasks = selectedDateTasks.filter(t => {
           const k = `${t.source_task_id || t.id}_${t.due_date}_${t.status}`;
@@ -4371,7 +4298,6 @@
               `}
             </div>
 
-            <!-- Selected Date Side Panel -->
             <div class="card" style="position:sticky; top:1.5rem;">
               <div class="card-title" style="margin-bottom:0.35rem;">
                 <span>${formatReadableDate(selectedDate, todayStr)}</span>
@@ -4394,10 +4320,10 @@
       } else if (subView === 'all') {
         const searchQ = (window.tasksSearchQuery || '').trim().toLowerCase();
         const filterCat = window.tasksFilterCategory || 'all';
-        const filterStatus = window.tasksFilterStatus || 'active'; // 'active' | 'all' | 'completed'
+        const filterStatus = window.tasksFilterStatus || 'active';
         const filterPri = window.tasksFilterPriority || 'all';
-        const filterDateRange = window.tasksFilterDateRange || 'all'; // 'all' | 'overdue' | 'today' | 'next7' | 'month' | 'unscheduled'
-        const sortBy = window.tasksSortBy || 'due_date'; // 'due_date' | 'priority' | 'created_at' | 'category'
+        const filterDateRange = window.tasksFilterDateRange || 'all';
+        const sortBy = window.tasksSortBy || 'due_date';
 
         const next7Str = addDays(todayStr, 7);
         const currentMonthPrefix = todayStr.slice(0, 7);
@@ -4433,7 +4359,6 @@
           if (sortBy === 'category') {
             return (a.category || 'zzz').localeCompare(b.category || 'zzz') || (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31');
           }
-          // Default: due_date
           return (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31') || getPriorityWeight(b.priority) - getPriorityWeight(a.priority);
         });
 
@@ -4495,7 +4420,7 @@
         `;
       } else if (subView === 'completed') {
         const compCat = window.tasksCompCategory || 'all';
-        const compRange = window.tasksCompRange || 'all'; // 'all' | 'today' | '7d' | 'month'
+        const compRange = window.tasksCompRange || 'all';
         const sevenDaysAgoStr = addDays(todayStr, -7);
         const currentMonthPrefix = todayStr.slice(0, 7);
 
@@ -4543,7 +4468,6 @@
       }
 
       return `
-        <!-- TASKS HEADER -->
         <div class="page-header">
           <div>
             <h1 class="page-title">Tasks</h1>
@@ -4554,7 +4478,6 @@
           </div>
         </div>
 
-        <!-- IN-APP REMINDER BANNER (When reminders are due) -->
         ${dueReminders.length > 0 ? `
           <div class="card" style="background:rgba(245, 158, 11, 0.1); border-color:rgba(245, 158, 11, 0.35); padding:0.95rem 1.25rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
@@ -4574,7 +4497,6 @@
           </div>
         ` : ''}
 
-        <!-- COMPACT SUMMARY STRIP -->
         <div class="tasks-summary-strip">
           <div class="tasks-stat-card">
             <div style="font-size:0.73rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Due Today</div>
@@ -4606,7 +4528,6 @@
           </div>
         </div>
 
-        <!-- FAST QUICK-ADD BAR -->
         <form id="quick-task-form" class="quick-add-bar" onsubmit="event.preventDefault(); window.handleQuickAddTask();">
           <span style="color:var(--color-primary); font-weight:800; font-size:1.1rem; padding-left:0.25rem;">+</span>
           <input type="text" id="qt-title" class="quick-add-input" placeholder="Quick add a task (e.g., Pay electricity bill, Submit report, Buy groceries)..." required />
@@ -4625,7 +4546,6 @@
           <button type="button" class="btn btn-secondary btn-sm" onclick="window.openTaskModal(null, document.getElementById('qt-date').value, document.getElementById('qt-title').value)">More Options</button>
         </form>
 
-        <!-- SECONDARY VIEW TABS (Today | Upcoming | Calendar | All Tasks | Completed) -->
         <div class="tasks-subnav">
           <div class="tasks-tabs" role="tablist" aria-label="Task Views">
             <button type="button" role="tab" aria-selected="${subView === 'today'}" class="tasks-tab-btn ${subView === 'today' ? 'active' : ''}" onclick="window.setTasksSubView('today')">
@@ -4650,7 +4570,6 @@
           </div>
         </div>
 
-        <!-- ACTIVE SUB-VIEW CONTENT -->
         <div style="display:flex; flex-direction:column; gap:1rem;">
           ${viewBodyHTML}
         </div>
@@ -4903,7 +4822,6 @@
       renderApp({ isRouteChange: false, preserveScroll: true });
     };
 
-    // --- Change Username Modal ---
     window.openChangeUsernameModal = () => {
       const user = db.getAuthenticatedUser();
       if (!user) return;
@@ -4943,7 +4861,6 @@
       };
     };
 
-    // --- Configure Daily Nutrition Targets & Weekly Workout Goal Modal ---
     window.openGoalsModal = async () => {
       const targets = await api.getUserTargets();
       const root = document.getElementById('modal-root');
@@ -5004,7 +4921,6 @@
       };
     };
 
-    // --- Quick Schedule Workout Modal (Connected to Calendar & Routines) ---
     window.openQuickScheduleModal = async (defaultDateStr = getLocalDateStr(), prefillTitle = '', prefillDuration = '') => {
       const routines = await api.getRoutines();
       const root = document.getElementById('modal-root');
@@ -5079,7 +4995,6 @@
       }
     };
 
-    // --- Meal Edit & Delete ---
     window.handleDeleteMeal = (id) => {
       showConfirmModal('Delete this meal entry? Overview nutrition totals will recalculate immediately.', async () => {
         await api.deleteMeal(id);
@@ -5149,7 +5064,6 @@
       };
     };
 
-    // --- Workout Edit & Delete ---
     window.handleDeleteWorkout = (id) => {
       showConfirmModal('Delete this workout record? Streaks, weekly progress, and consistency metrics will recalculate.', async () => {
         await api.deleteWorkout(id);
@@ -5221,7 +5135,6 @@
       renderApp({ isRouteChange: false, preserveScroll: true });
     }, 'Delete Routine');
 
-    // --- Routine Checklist Exercise Toggle (Used in Calendar Event Manager & Checklist Mode) ---
     window.toggleRoutineExercise = async (checkbox) => {
       const exName = checkbox.getAttribute('data-name');
       const exSets = checkbox.getAttribute('data-sets');
@@ -5306,7 +5219,6 @@
       window.openRoutineModal(r, targetDate);
     };
 
-    // --- Comprehensive Scheduled Event Modal ---
     window.openEventManageModal = async (eventId) => {
       const events = await api.getEvents();
       const evt = events.find(e => e.id === eventId);
@@ -5441,9 +5353,6 @@
       renderApp();
     };
 
-    // =========================================================================
-    // TASKS MODULE — INTERACTIVE HANDLERS, MODALS & DRAG-AND-DROP
-    // =========================================================================
     window.setTasksSubView = (view) => {
       if (window.tasksSubView === view) return;
       window.tasksSubView = view;
@@ -5574,7 +5483,6 @@
       renderApp({ isRouteChange: false, preserveScroll: true });
     };
 
-    // Drag and drop rescheduling on Calendar
     window.handleTaskDragStart = (event, taskId, occurrenceDate) => {
       event.dataTransfer.setData('text/plain', JSON.stringify({ taskId, occurrenceDate }));
     };
@@ -5598,7 +5506,6 @@
       } catch (e) {}
     };
 
-    // Accessible Reschedule Modal (supports single occurrence vs series for recurring tasks)
     window.openTaskRescheduleModal = async (taskId, occurrenceDate = '', prefillDate = '') => {
       const tasks = await api.getTasks();
       const task = tasks.find(t => t.id === taskId);
@@ -5664,7 +5571,6 @@
       }
     };
 
-    // Delete Task Prompt (Supports single occurrence vs series for recurring tasks)
     window.handleDeleteTaskPrompt = async (taskId, occurrenceDate = '') => {
       const tasks = await api.getTasks();
       const task = tasks.find(t => t.id === taskId);
@@ -5722,7 +5628,6 @@
       window.openRoutineChecklistModal(r, dateStr);
     };
 
-    // Manage Categories / Lists Modal
     window.openManageTaskCategoriesModal = async () => {
       const categories = await api.getTaskCategories();
       const root = document.getElementById('modal-root');
@@ -5789,7 +5694,6 @@
       }
     };
 
-    // Full Task Create & Edit Modal (With Recurrence Rules, Subtasks, and In-App Reminders)
     window.openTaskModal = async (taskId = null, prefillDate = '', prefillTitle = '') => {
       const categories = await api.getTaskCategories();
       const tasks = await api.getTasks();
@@ -5847,7 +5751,6 @@
                 </div>
               </div>
 
-              <!-- Recurrence Configuration -->
               <div style="background:var(--bg-input); border:1px solid var(--border-color); border-radius:14px; padding:1rem; margin-bottom:1.1rem;">
                 <div class="form-row" style="align-items:flex-end;">
                   <div class="form-group" style="margin-bottom:0; flex:1.5;">
@@ -5895,13 +5798,11 @@
                 </div>
               </div>
 
-              <!-- Description / Notes -->
               <div class="form-group">
                 <div class="form-label-wrap"><label for="tm-desc">Notes / Description</label><span class="label-optional">(Optional)</span></div>
                 <textarea id="tm-desc" rows="2" placeholder="Account numbers, links, or helpful details...">${escapeHtml(task ? task.description : '')}</textarea>
               </div>
 
-              <!-- Subtasks Checklist -->
               <div class="form-group">
                 <div class="form-label-wrap"><label>Subtasks / Checklist</label><span class="label-optional">(Optional)</span></div>
                 <div id="tm-subtasks-list" style="display:flex; flex-direction:column; gap:0.4rem; margin-bottom:0.5rem;"></div>
@@ -5911,7 +5812,6 @@
                 </div>
               </div>
 
-              <!-- In-App Reminder -->
               <div class="form-group">
                 <div class="form-label-wrap">
                   <label for="tm-reminder">In-App Reminder</label>
@@ -6014,8 +5914,6 @@
       window.renderModalSubtasks();
     };
 
-    // =========================================================================
-    // MAIN APPLICATION RENDER LOOP
     // =========================================================================
     // MAIN APPLICATION RENDER LOOP (PERSISTENT SHELL & ZERO-FLICKER UPDATES)
     // =========================================================================
@@ -6195,7 +6093,6 @@
             </aside>
             <main class="main-content" id="main-content" aria-live="polite"></main>
 
-            <!-- Mobile-Only Floating Navigation Dock & Expandable Quick Actions -->
             <div id="mobile-quick-actions-backdrop" class="mobile-quick-actions-backdrop" onclick="window.closeMobileQuickActions()"></div>
             <nav id="mobile-nav-dock" class="mobile-nav-dock-root" aria-label="Mobile Navigation">
               <div id="mobile-quick-actions-panel" class="mobile-quick-actions-panel" role="menu" aria-label="Quick Actions" onclick="event.stopPropagation()">
@@ -6240,7 +6137,6 @@
           </div>
         `;
       } else {
-        // Update active state on persistent sidebar links without rebuilding sidebar DOM
         const links = shell.querySelectorAll('#sidebar-nav-links .nav-link');
         links.forEach(link => {
           const route = link.getAttribute('data-route');
@@ -6288,7 +6184,6 @@
       const navItems = ['Dashboard', 'Nutrition', 'Workouts', 'Routines', 'Calendar', 'Tasks', 'Account'];
       const mainEl = ensurePersistentShell(app, user, navItems);
 
-      // Show cached view immediately if navigating to a route that was already rendered once, while computing fresh HTML
       if (options.isRouteChange && viewCache[currentPath] && !mainEl.innerHTML) {
         mainEl.innerHTML = viewCache[currentPath];
       }
@@ -6308,8 +6203,6 @@
         else contentHTML = await renderDashboard(user);
 
         viewCache[currentPath] = contentHTML;
-
-        // Swap main content in-place without unmounting the sidebar or app shell
         mainEl.innerHTML = contentHTML;
 
         if (options.isRouteChange && !isInitialRender) {
@@ -6328,8 +6221,6 @@
         isInitialRender = false;
       }
 
-      // Restore or preserve scroll position smoothly:
-      // If returning to a route on mobile, only restore scroll position if there was unsaved input; otherwise start at the top.
       if (options.preserveScroll && (!options.isRouteChange || routeDirtyState[currentPath])) {
         const targetY = options.isRouteChange ? (routeScrollPositions[currentPath] || 0) : savedScrollY;
         window.scrollTo(0, targetY);
@@ -6339,7 +6230,6 @@
         window.scrollTo(0, 0);
       }
 
-      // Restore any unsaved form input draft for this route & listen for new input changes
       restoreCurrentRouteFormDraft(currentPath);
       const mainInputs = mainEl.querySelectorAll('input:not([type="date"]):not([type="checkbox"]):not([type="radio"]), textarea');
       mainInputs.forEach(inp => {
@@ -6353,7 +6243,6 @@
         requestAnimationFrame(() => scrollMobileHeatmapToActiveMonth());
       }
 
-      // Attach Form Handlers with Localized Button Loading States
       if (currentPath === '/nutrition') {
         const mealForm = document.getElementById('meal-form');
         if (mealForm) mealForm.onsubmit = async (e) => {
@@ -6469,11 +6358,8 @@
   const localSave = db.save.bind(db);
   let pendingCloudSave = Promise.resolve();
 
-  // Send each change to Supabase immediately. A delayed save can be cancelled
-  // when a user refreshes, closes the tab, or signs out straight after editing.
   async function syncCloudState() {
     if (!cloudUser) return;
-    // Queue writes so a slower earlier request can never overwrite a newer one.
     pendingCloudSave = pendingCloudSave.catch(() => undefined).then(() =>
       cloud.from('hench_user_data').upsert({
         user_id: cloudUser.id,
@@ -6497,23 +6383,28 @@
 
   async function loadCloudState(session) {
     const user = session.user;
-    cloudUser = {
-      id: user.id,
-      name: user.user_metadata?.name || user.email.split('@')[0],
-      email: user.email,
-      created_at: user.created_at,
-      targets: { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
-      task_categories: [...DEFAULT_TASK_CATEGORIES]
-    };
     const { data, error } = await cloud.from('hench_user_data').select('state').eq('user_id', user.id).maybeSingle();
     if (error) throw error;
+    
+    let savedUser = null;
     if (data?.state) {
       db.state = { ...defaultDbState(), ...data.state };
+      savedUser = db.state.users?.find(u => String(u.id) === String(user.id)) || db.state.users?.[0];
     } else {
       db.state = defaultDbState();
       db.state.users = []; db.state.sessions = []; db.state.meals = []; db.state.workouts = [];
       db.state.routines = []; db.state.events = []; db.state.tasks = [];
     }
+
+    cloudUser = {
+      id: user.id,
+      name: savedUser?.name || user.user_metadata?.name || user.email.split('@')[0],
+      email: user.email,
+      created_at: user.created_at,
+      targets: savedUser?.targets || { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
+      task_categories: savedUser?.task_categories || [...DEFAULT_TASK_CATEGORIES]
+    };
+
     db.state.users = [cloudUser];
     db.state.sessions = [{ id: 1, user_id: user.id, token: 'cloud' }];
     localStorage.setItem('hench_session', 'cloud');
@@ -6521,9 +6412,22 @@
     if (!data?.state) db.save();
   }
 
-  api.login = async (email, password) => {
-    const { data, error } = await cloud.auth.signInWithPassword({ email: (email || '').trim(), password });
-    if (error) throw error;
+  api.login = async (identifier, password) => {
+    const cleanId = (identifier || '').trim();
+    let loginEmail = cleanId;
+
+    // If the input doesn't look like an email, try resolving it as a username locally
+    if (!cleanId.includes('@')) {
+      const localUser = (db.state.users || []).find(u => u.name.toLowerCase() === cleanId.toLowerCase());
+      if (localUser && localUser.email) {
+        loginEmail = localUser.email;
+      } else {
+        throw new Error("Username not recognized on this device. Please sign in with your email address.");
+      }
+    }
+
+    const { data, error } = await cloud.auth.signInWithPassword({ email: loginEmail, password });
+    if (error) throw new Error("Invalid login credentials.");
     await loadCloudState(data.session);
     return { success: true };
   };
@@ -6538,7 +6442,6 @@
     return { success: true };
   };
   api.logout = async () => {
-    // Do not discard a just-entered change when the user signs out.
     await syncCloudState().catch(error => console.error('Final cloud sync failed:', error));
     await cloud.auth.signOut();
     cloudUser = null;
