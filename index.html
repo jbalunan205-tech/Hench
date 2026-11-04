@@ -6462,3 +6462,86 @@
   </script>
 </body>
 </html>
+
+
+<script>
+// Supabase authentication and cross-device data sync.
+(async () => {
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+  const cloud = createClient('https://cpxdahjmqqsafhtwjqhf.supabase.co', 'sb_publishable_mMBZAy4F_3Nt7n3HaLEDrA_NqISlft1');
+  let cloudUser = null;
+  let saveTimer = null;
+  const localSave = db.save.bind(db);
+
+  db.getAuthenticatedUser = () => cloudUser;
+  db.save = () => {
+    localSave();
+    if (!cloudUser) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      const { error } = await cloud.from('hench_user_data').upsert({
+        user_id: cloudUser.id,
+        state: db.state,
+        updated_at: new Date().toISOString()
+      });
+      if (error) console.error('Cloud sync failed:', error);
+    }, 350);
+  };
+
+  async function loadCloudState(session) {
+    const user = session.user;
+    cloudUser = {
+      id: user.id,
+      name: user.user_metadata?.name || user.email.split('@')[0],
+      email: user.email,
+      created_at: user.created_at,
+      targets: { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
+      task_categories: [...DEFAULT_TASK_CATEGORIES]
+    };
+    const { data, error } = await cloud.from('hench_user_data').select('state').eq('user_id', user.id).maybeSingle();
+    if (error) throw error;
+    if (data?.state) {
+      db.state = { ...defaultDbState(), ...data.state };
+    } else {
+      db.state = defaultDbState();
+      db.state.users = []; db.state.sessions = []; db.state.meals = []; db.state.workouts = [];
+      db.state.routines = []; db.state.events = []; db.state.tasks = [];
+    }
+    db.state.users = [cloudUser];
+    db.state.sessions = [{ id: 1, user_id: user.id, token: 'cloud' }];
+    localStorage.setItem('hench_session', 'cloud');
+    localSave();
+    if (!data?.state) db.save();
+  }
+
+  api.login = async (email, password) => {
+    const { data, error } = await cloud.auth.signInWithPassword({ email: (email || '').trim(), password });
+    if (error) throw error;
+    await loadCloudState(data.session);
+    return { success: true };
+  };
+  api.register = async (email, password) => {
+    const cleanEmail = (email || '').trim();
+    if (!cleanEmail.includes('@')) throw new Error('Please register with an email address.');
+    if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
+    const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { data: { name: cleanEmail.split('@')[0] } } });
+    if (error) throw error;
+    if (!data.session) throw new Error('Check your email to confirm your account, then log in.');
+    await loadCloudState(data.session);
+    return { success: true };
+  };
+  api.logout = async () => {
+    await cloud.auth.signOut();
+    cloudUser = null;
+    localStorage.removeItem('hench_session');
+    currentPath = '/dashboard';
+    renderApp({ isRouteChange: true, preserveScroll: false });
+  };
+
+  const { data: { session } } = await cloud.auth.getSession();
+  if (session) {
+    await loadCloudState(session);
+    renderApp({ isRouteChange: false, preserveScroll: false });
+  }
+})().catch(error => console.error('Cloud startup failed:', error));
+</script>
