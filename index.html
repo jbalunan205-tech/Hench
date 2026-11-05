@@ -1260,6 +1260,91 @@
       .metric-value { font-size: 1.75rem; }
       .btn { min-height: 42px; }
     }
+
+    /* Mobile-first polish shared by every application route. */
+    @media (max-width: 768px) {
+      .main-content {
+        padding: 1.25rem 1rem calc(124px + env(safe-area-inset-bottom, 0px)) !important;
+        gap: 1.35rem;
+      }
+      .main-content > section,
+      .main-content > .card,
+      .main-content > div { min-width: 0; }
+      .page-header {
+        align-items: flex-start;
+        gap: 1rem;
+        padding-bottom: 1.15rem;
+      }
+      .page-title { font-size: clamp(1.55rem, 7vw, 1.95rem); line-height: 1.08; }
+      .page-subtitle { max-width: 29ch; margin-top: .45rem; font-size: .91rem; line-height: 1.48; }
+      .section-header { align-items: flex-start; gap: .65rem; margin-bottom: .7rem; }
+      .section-link { min-height: 40px; display: inline-flex; align-items: center; padding: .35rem .25rem; }
+
+      /* Dashboard: identity first, then a spacious row of real controls. */
+      .overview-page-header { display: block !important; }
+      .overview-page-header > div:first-child { margin-bottom: 1rem; }
+      .overview-header-actions {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(112px, .8fr);
+        align-items: stretch !important;
+        gap: .7rem !important;
+        margin-left: 0 !important;
+      }
+      .overview-header-actions .section-link { grid-column: 1 / -1; justify-content: center; }
+      .overview-header-actions input[type="date"] {
+        width: 100% !important;
+        min-height: 48px;
+        padding: .55rem .7rem !important;
+        font-size: .86rem !important;
+      }
+      .overview-header-actions .btn { width: 100%; min-height: 48px; }
+      .overview-goals-btn { display: none !important; }
+
+      .card, .tasks-stat-card, .quick-add-bar, .tasks-filter-bar, .task-row {
+        border-radius: 15px;
+        padding: 1rem;
+      }
+      .card { box-shadow: 0 8px 20px rgba(0,0,0,.13); }
+      .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+      .dashboard-grid .card { padding: .95rem; }
+      .dashboard-grid .metric-value { font-size: clamp(1.42rem, 7vw, 1.8rem); }
+      .progress-layout, .activity-split-grid, .tasks-calendar-layout { gap: .9rem; }
+      .heatmap-card { padding: 1rem; }
+      .heatmap-right { gap: .75rem; }
+      .weekly-summary-strip { padding: .75rem; }
+      .weekly-chart-wrapper { overflow-x: auto; }
+
+      /* Forms and filters: generous tap targets, no iOS auto-zoom, no clipping. */
+      input, select, textarea, .form-control { min-height: 46px; font-size: 16px !important; }
+      textarea { min-height: 104px; }
+      .form-row { gap: .75rem; }
+      .form-row > .form-group { min-width: 100%; margin-bottom: .75rem; }
+      .btn { min-height: 46px; }
+      .btn-sm { min-height: 40px; }
+      .tasks-filter-bar { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+      .tasks-filter-bar select,
+      .tasks-filter-bar input[type="search"],
+      .tasks-filter-bar input[type="date"] { width: 100%; min-width: 0; }
+      .tasks-filter-bar > :first-child:last-child { grid-column: 1 / -1; }
+      .quick-add-bar { grid-template-columns: 1fr 1fr; padding: .8rem; }
+      .quick-add-bar .btn { width: 100%; }
+      .task-row-actions { gap: .5rem; }
+      .task-icon-btn { min-height: 40px; padding: .45rem .7rem; }
+
+      /* Narrow data views remain usable without letting the document overflow. */
+      .tasks-cal-grid, .calendar-month-grid { min-width: 560px; }
+      .tasks-calendar-layout > .card, .calendar-layout-grid > .card { overflow-x: auto; }
+      .tasks-cal-cell { min-height: 82px; }
+      .modal-dialog { max-height: min(82vh, 720px); }
+    }
+
+    @media (max-width: 390px) {
+      .main-content { padding-left: .78rem !important; padding-right: .78rem !important; }
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .overview-header-actions { grid-template-columns: 1fr 108px; gap: .55rem !important; }
+      .card, .tasks-stat-card, .quick-add-bar, .tasks-filter-bar, .task-row { padding: .9rem; }
+    }
   </style>
 </head>
 <body>
