@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Hench</title>
-  <link rel="icon" href="Website Icon.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="Neon Green Turquoise H Logo.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="Neon Green Turquoise H Logo.png">
+  <link rel="icon" type="image/png" sizes="48x48" href="Neon Green Turquoise H Logo.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="Neon Green Turquoise H Logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
@@ -566,6 +569,12 @@
     /* Auth */
     .auth-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; position: relative; z-index: 10; }
     .auth-card { background: var(--bg-surface); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); padding: 3rem; border-radius: 32px; border: 1px solid var(--border-color); width: 100%; max-width: 440px; box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
+    .auth-logo-wrap { display: flex; justify-content: center; align-items: center; margin-bottom: 1.75rem; }
+    .auth-brand-logo { width: 84px; height: 84px; object-fit: contain; display: block; user-select: none; -webkit-user-drag: none; }
+    @media (max-width: 768px) {
+      .auth-logo-wrap { margin-bottom: 1.5rem; }
+      .auth-brand-logo { width: 72px; height: 72px; }
+    }
     .auth-tabs { display: flex; gap: 0.5rem; margin-bottom: 2rem; background: var(--bg-input); padding: 0.35rem; border-radius: 14px; border: 1px solid var(--border-color); }
     .auth-tab { flex: 1; text-align: center; padding: 0.65rem; border-radius: 10px; cursor: pointer; font-weight: 600; color: var(--text-muted); transition: var(--transition); }
     .auth-tab.active { background: rgba(255,255,255,0.08); color: var(--text-white); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
@@ -1195,6 +1204,202 @@
     // =========================================================================
     const DB_STORAGE_KEY = 'hench_sqlite_db_v2';
     const DEFAULT_TASK_CATEGORIES = ['Personal', 'Work', 'Bills & Finance', 'Home', 'Admin & Errands', 'Other'];
+    const HENCH_LOGO_ASSET = 'Neon Green Turquoise H Logo.png';
+
+    function generateHenchRibbonLogoDataUrl(size = 512) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const s = size / 1000;
+      ctx.save();
+      ctx.scale(s, s);
+
+      // Exact geometry of the Neon Green Turquoise H ribbon mark (cropped 180..820 -> 0..1000)
+      ctx.translate(-180, -180);
+      ctx.scale(1000 / 640, 1000 / 640);
+
+      const mainGrad = ctx.createLinearGradient(260, 260, 740, 740);
+      mainGrad.addColorStop(0, '#00f59b');
+      mainGrad.addColorStop(0.5, '#00e893');
+      mainGrad.addColorStop(1, '#00dc8a');
+
+      const strokeW = 56;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // 1. Under-fold pillar segments (with realistic ribbon shadow gradients)
+      // Left pillar inner-right leg (top half, tucking under the upper diagonal bridge)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(422, 362);
+      ctx.lineTo(422, 485);
+      ctx.lineWidth = strokeW;
+      const leftShadowGrad = ctx.createLinearGradient(422, 375, 422, 480);
+      leftShadowGrad.addColorStop(0, '#00e893');
+      leftShadowGrad.addColorStop(0.55, '#00c97e');
+      leftShadowGrad.addColorStop(1, '#026847');
+      ctx.strokeStyle = leftShadowGrad;
+      ctx.stroke();
+      ctx.restore();
+
+      // Right pillar inner-left leg (bottom half, tucking under the lower diagonal bridge)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(578, 515);
+      ctx.lineTo(578, 638);
+      ctx.lineWidth = strokeW;
+      const rightShadowGrad = ctx.createLinearGradient(578, 520, 578, 625);
+      rightShadowGrad.addColorStop(0, '#026847');
+      rightShadowGrad.addColorStop(0.45, '#00c97e');
+      rightShadowGrad.addColorStop(1, '#00e893');
+      ctx.strokeStyle = rightShadowGrad;
+      ctx.stroke();
+      ctx.restore();
+
+      // 2. Main continuous neon turquoise-green ribbon paths
+      ctx.save();
+      ctx.strokeStyle = mainGrad;
+      ctx.lineWidth = strokeW;
+
+      // Left pillar: bottom loop + full outer-left leg + top loop
+      ctx.beginPath();
+      ctx.arc(368, 362, 54, 0, Math.PI, true);
+      ctx.lineTo(314, 638);
+      ctx.arc(368, 638, 54, Math.PI, 0, true);
+      ctx.lineTo(422, 576);
+      ctx.stroke();
+
+      // Right pillar: top loop + full outer-right leg + bottom loop
+      ctx.beginPath();
+      ctx.moveTo(578, 424);
+      ctx.lineTo(578, 362);
+      ctx.arc(632, 362, 54, Math.PI, 0, false);
+      ctx.lineTo(686, 638);
+      ctx.arc(632, 638, 54, 0, Math.PI, false);
+      ctx.stroke();
+
+      // Upper diagonal ribbon (sweeping from left outer leg up to right inner leg)
+      ctx.beginPath();
+      ctx.moveTo(314, 535);
+      ctx.quadraticCurveTo(314, 502, 346, 490);
+      ctx.lineTo(552, 412);
+      ctx.quadraticCurveTo(578, 402, 578, 372);
+      ctx.stroke();
+
+      // Lower diagonal ribbon (sweeping from left inner leg up to right outer leg)
+      ctx.beginPath();
+      ctx.moveTo(422, 628);
+      ctx.quadraticCurveTo(422, 598, 448, 588);
+      ctx.lineTo(654, 510);
+      ctx.quadraticCurveTo(686, 498, 686, 465);
+      ctx.stroke();
+
+      ctx.restore();
+      ctx.restore();
+      return canvas.toDataURL('image/png');
+    }
+
+    function applyFaviconsFromSourceCanvas(sourceCanvas) {
+      const outW = sourceCanvas.width;
+      const outH = sourceCanvas.height;
+      [16, 32, 48, 180].forEach(sz => {
+        const fCanvas = document.createElement('canvas');
+        fCanvas.width = sz;
+        fCanvas.height = sz;
+        const fCtx = fCanvas.getContext('2d');
+        fCtx.imageSmoothingEnabled = true;
+        fCtx.imageSmoothingQuality = 'high';
+        fCtx.drawImage(sourceCanvas, 0, 0, outW, outH, 0, 0, sz, sz);
+        const dataUrl = fCanvas.toDataURL('image/png');
+        const selector = sz === 180 ? `link[rel="apple-touch-icon"]` : `link[rel="icon"][sizes="${sz}x${sz}"]`;
+        const linkEl = document.querySelector(selector);
+        if (linkEl) linkEl.href = dataUrl;
+      });
+    }
+
+    (function setupBrandLogoAndFavicons() {
+      // Immediately initialize crisp transparent logo & favicons so the preview and offline views never show a broken image
+      const fallbackUrl = generateHenchRibbonLogoDataUrl(512);
+      window._henchTransparentLogoUrl = fallbackUrl;
+
+      const fallbackImg = new Image();
+      fallbackImg.onload = function () {
+        const c = document.createElement('canvas');
+        c.width = 512;
+        c.height = 512;
+        c.getContext('2d').drawImage(fallbackImg, 0, 0);
+        applyFaviconsFromSourceCanvas(c);
+      };
+      fallbackImg.src = fallbackUrl;
+
+      // Also attempt to load the external file asset directly if present in the same directory
+      const img = new Image();
+      img.onload = function () {
+        try {
+          const srcCanvas = document.createElement('canvas');
+          const w = img.naturalWidth || img.width;
+          const h = img.naturalHeight || img.height;
+          srcCanvas.width = w;
+          srcCanvas.height = h;
+          const ctx = srcCanvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const d = imgData.data;
+          let minX = w, minY = h, maxX = 0, maxY = 0;
+
+          for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+              const i = (y * w + x) * 4;
+              const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+              if (a === 0) continue;
+              const isNearWhite = r > 238 && g > 238 && b > 238 && Math.abs(g - r) < 12 && Math.abs(g - b) < 12;
+              if (isNearWhite) {
+                d[i + 3] = 0;
+              } else {
+                if (r > 210 && g > 230 && b > 215 && (g - r) < 28) {
+                  const whiteness = (r + g + b) / 3;
+                  if (whiteness > 230) {
+                    d[i + 3] = Math.round(a * Math.max(0, (250 - whiteness) / 20));
+                  }
+                }
+                if (d[i + 3] > 15) {
+                  if (x < minX) minX = x;
+                  if (x > maxX) maxX = x;
+                  if (y < minY) minY = y;
+                  if (y > maxY) maxY = y;
+                }
+              }
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          const cropW = maxX >= minX ? (maxX - minX + 1) : w;
+          const cropH = maxY >= minY ? (maxY - minY + 1) : h;
+          const size = Math.max(cropW, cropH);
+          const pad = Math.round(size * 0.06);
+          const outSize = size + pad * 2;
+
+          const trimmedCanvas = document.createElement('canvas');
+          trimmedCanvas.width = outSize;
+          trimmedCanvas.height = outSize;
+          const tCtx = trimmedCanvas.getContext('2d');
+          const offsetX = pad + Math.round((size - cropW) / 2);
+          const offsetY = pad + Math.round((size - cropH) / 2);
+          tCtx.drawImage(srcCanvas, minX, minY, cropW, cropH, offsetX, offsetY, cropW, cropH);
+
+          window._henchTransparentLogoUrl = trimmedCanvas.toDataURL('image/png');
+          document.querySelectorAll('img.auth-brand-logo').forEach(el => {
+            el.src = window._henchTransparentLogoUrl;
+          });
+          applyFaviconsFromSourceCanvas(trimmedCanvas);
+        } catch (err) {
+          // Keep the transparent logo URL active if local file:// canvas readback is restricted
+        }
+      };
+      img.src = HENCH_LOGO_ASSET;
+    })();
 
     const defaultDbState = () => ({
       users: [
@@ -5101,7 +5306,7 @@
             <div style="text-align:center; margin-top:1.15rem;">
               <button type="button" class="forgot-password-link" onclick="window.switchAuthTab(false)">&larr; Back to Sign In</button>
             </div>
-            <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.1rem;">By John Balunan</div>
+            <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.1rem;">Hench by John Balunan</div>
           </form>
         `;
       }
@@ -5137,7 +5342,7 @@
             </div>
           ` : ''}
           <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; margin-top:1rem; font-size:1rem;">${isRegister ? 'Create Account' : 'Sign In'}</button>
-          <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.25rem;">By John Balunan</div>
+          <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.25rem;">Hench by John Balunan</div>
         </form>
       `;
     }
@@ -6786,13 +6991,12 @@
 
       if (!user) {
         isInitialRender = false;
+        const logoSrc = window._henchTransparentLogoUrl || HENCH_LOGO_ASSET;
         app.innerHTML = `
           <div class="auth-container">
             <div class="auth-card">
-              <div style="text-align: center; margin-bottom: 2rem;">
-                <div style="display:flex; justify-content:center; align-items:center; gap:0.5rem; font-family:var(--font-display); font-size:2.5rem; font-weight:800; margin-bottom:0.5rem; letter-spacing:-0.05em; color:var(--text-white);">
-                  Hench
-                </div>
+              <div class="auth-logo-wrap">
+                <img src="${logoSrc}" alt="Hench" class="auth-brand-logo" onerror="if(window._henchTransparentLogoUrl && this.src !== window._henchTransparentLogoUrl){this.src = window._henchTransparentLogoUrl;}" />
               </div>
               <div class="auth-tabs">
                 <div class="auth-tab active" id="tab-login" onclick="window.switchAuthTab(false)">Log In</div>
