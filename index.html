@@ -547,7 +547,10 @@
     /* Custom Modern Checkbox */
     .custom-checkbox {
       appearance: none; -webkit-appearance: none;
-      width: 1.15rem !important; height: 1.15rem !important; flex-shrink: 0;
+      width: 1.15rem !important; height: 1.15rem !important;
+      min-width: 1.15rem !important; min-height: 1.15rem !important;
+      max-width: 1.15rem !important; max-height: 1.15rem !important;
+      flex: 0 0 1.15rem;
       padding: 0 !important;
       border: 2px solid var(--border-strong);
       border-radius: 6px; background: rgba(0,0,0,0.25);
@@ -555,8 +558,9 @@
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .custom-checkbox:checked {
-      background-color: var(--color-primary);
-      border-color: var(--color-primary);
+      background: var(--color-primary) !important;
+      background-color: var(--color-primary) !important;
+      border-color: var(--color-primary) !important;
       box-shadow: 0 0 10px var(--color-primary-dim);
     }
     .custom-checkbox:checked::after {
@@ -1337,6 +1341,47 @@
       .tasks-calendar-layout > .card, .calendar-layout-grid > .card { overflow-x: auto; }
       .tasks-cal-cell { min-height: 82px; }
       .modal-dialog { max-height: min(82vh, 720px); }
+
+      /* Routine checklists: keep the control compact, visible, and easy to tap. */
+      .routine-ex-row {
+        align-items: center !important;
+        gap: .75rem !important;
+        padding: .8rem .9rem !important;
+      }
+      .routine-ex-row > label {
+        min-width: 0 !important;
+        width: 100%;
+        gap: .7rem !important;
+      }
+      .routine-ex-row .custom-checkbox {
+        width: 1.4rem !important;
+        height: 1.4rem !important;
+        min-width: 1.4rem !important;
+        min-height: 1.4rem !important;
+        max-width: 1.4rem !important;
+        max-height: 1.4rem !important;
+        flex-basis: 1.4rem;
+      }
+      .routine-ex-row .custom-checkbox:checked {
+        background: var(--color-primary) !important;
+        border-color: var(--color-primary) !important;
+      }
+      .routine-ex-row .routine-ex-title { line-height: 1.35; }
+      .routine-ex-row .routine-ex-summary { display: inline; white-space: normal; }
+      .routine-ex-steps-control {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: .6rem !important;
+        padding-top: .7rem;
+        border-top: 1px solid var(--border-color);
+      }
+      .routine-ex-step-input {
+        width: 100% !important;
+        min-height: 42px !important;
+        text-align: left !important;
+      }
     }
 
     @media (max-width: 390px) {
@@ -6280,7 +6325,10 @@
     function renderChecklistExerciseRowHTML(ex, matchedWorkout, dateStr, eventId = null, routineId = null, exIdx = null) {
       const checked = !!matchedWorkout;
       const wId = matchedWorkout ? matchedWorkout.id : '';
-      const isStepBased = (Number(ex.steps) > 0) || /walk|step|run|jog|hike|cardio|treadmill/i.test(ex.name || '');
+      // A Steps control is only useful when this exercise was explicitly given a step target.
+      // Do not infer it from the exercise name: "Decline Bench Crunches" and other
+      // non-step exercises must remain compact on every screen size.
+      const isStepBased = Number(ex.steps) > 0;
       const currentStepsVal = matchedWorkout && matchedWorkout.steps !== null && matchedWorkout.steps !== undefined
         ? matchedWorkout.steps
         : (ex.steps || '');
@@ -6314,7 +6362,7 @@
             </div>
           </label>
           ${isStepBased ? `
-            <div style="display:flex; align-items:center; gap:0.35rem;" onclick="event.stopPropagation();">
+            <div class="routine-ex-steps-control" style="display:flex; align-items:center; gap:0.35rem;" onclick="event.stopPropagation();">
               <span style="font-size:0.72rem; color:var(--text-muted); font-weight:600;">Steps:</span>
               <input type="number" class="routine-ex-step-input" min="0" step="100" value="${currentStepsVal}"
                      aria-label="Steps for ${escapeHtml(ex.name)}"
