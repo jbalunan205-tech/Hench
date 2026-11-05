@@ -1063,6 +1063,137 @@
         }
       }
     }
+    /* ======================================================================
+       HENCH 2026 — PREMIUM FITNESS DASHBOARD REDESIGN
+       Presentation-only layer: existing markup, routes, events and data stay
+       untouched. These rules intentionally come last to unify every screen.
+       ====================================================================== */
+    :root {
+      --bg-body: #090d0b;
+      --bg-surface: #111817;
+      --bg-surface-elevated: #151d1a;
+      --bg-surface-hover: #1a2420;
+      --bg-input: #0d1411;
+      --border-color: rgba(153, 183, 169, 0.14);
+      --border-strong: rgba(153, 183, 169, 0.28);
+      --text-white: #f3f3f3;
+      --text-muted: #9ba8a2;
+      --text-dim: #718078;
+      --color-primary: #00e599;
+      --color-primary-hover: #22efad;
+      --color-primary-dim: rgba(0, 229, 153, 0.12);
+      --transition: 180ms cubic-bezier(.2,.8,.2,1);
+    }
+
+    html { background: #090d0b; }
+    body {
+      background: #090d0b;
+      background-image: radial-gradient(circle at 76% -10%, rgba(0,229,153,.08), transparent 29%), linear-gradient(180deg, #0c1210 0, #090d0b 35rem);
+      letter-spacing: .005em;
+    }
+    .layout-wrapper { max-width: 1920px; margin: 0 auto; background: rgba(9,13,11,.7); }
+
+    /* Desktop application rail */
+    .sidebar {
+      width: 264px;
+      background: #0c1110;
+      border-right: 1px solid rgba(153,183,169,.12);
+      box-shadow: 12px 0 38px rgba(0,0,0,.12);
+      padding: .5rem 0;
+    }
+    .sidebar .brand {
+      padding: 1.8rem 1.6rem 1.65rem;
+      color: #f3f3f3;
+      font-size: 1.65rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .sidebar .brand::before { content: ''; width: 9px; height: 9px; margin-right: .55rem; border-radius: 50%; background: var(--color-primary); box-shadow: 0 0 18px rgba(0,229,153,.8); }
+    .sidebar .nav-links { padding: 0 .85rem; gap: .28rem; }
+    .sidebar .nav-link {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      border-radius: 10px;
+      color: #9ba8a2;
+      padding: .72rem 1rem;
+      font-size: .88rem;
+      letter-spacing: .01em;
+    }
+    .sidebar .nav-link:hover { color: #f3f3f3; background: rgba(255,255,255,.045); }
+    .sidebar .nav-link.active { color: #00e599; background: rgba(0,229,153,.1); box-shadow: inset 0 0 0 1px rgba(0,229,153,.13); }
+    .sidebar .nav-link.active::before { left: 0; top: 24%; height: 52%; width: 3px; border-radius: 0 4px 4px 0; }
+    .sidebar-footer { padding: 1.15rem 1.35rem 1.25rem; border-top-color: rgba(153,183,169,.12); }
+
+    /* Workspace and hierarchy */
+    .main-content { max-width: none; padding: 2rem clamp(1.35rem, 3vw, 3.25rem) 3rem; gap: 1.65rem; }
+    .page-header { padding-bottom: .55rem; border-bottom: 1px solid rgba(153,183,169,.1); }
+    .page-title { font-size: clamp(1.65rem, 2vw, 2.2rem); letter-spacing: -.04em; }
+    .page-subtitle { color: var(--text-muted); }
+    .section-header { margin-bottom: .8rem; }
+    .section-label { color: #c1ccc6; font-size: .72rem; letter-spacing: .11em; }
+    .section-link { color: #00e599; }
+
+    /* Cards, forms and lists */
+    .card, .tasks-stat-card, .quick-add-bar, .tasks-filter-bar, .task-row {
+      background: #111817;
+      border-color: rgba(153,183,169,.14);
+      border-radius: 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.16);
+    }
+    .card { padding: 1.3rem; }
+    .card:hover, .task-row:hover { border-color: rgba(0,229,153,.26); background: #151d1a; }
+    .card-title { font-size: .92rem; letter-spacing: -.01em; }
+    .dashboard-grid { gap: 1rem; }
+    .metric-value { font-size: 2rem; }
+    .metric-sub { color: #8e9b94; }
+    .progress-track { background: #25302b; height: 6px; }
+    .progress-fill { box-shadow: 0 0 12px rgba(0,229,153,.35); }
+    .todays-plan-card, .macro-card-success { background: linear-gradient(135deg, rgba(0,229,153,.11), #111817 46%); border-color: rgba(0,229,153,.28); }
+    .macro-card-warning { background: linear-gradient(135deg, rgba(245,158,11,.1), #111817 52%); }
+    .weekly-summary-strip, .metric-tabs, .tasks-tabs, .plan-pill { background: #0d1411; border-color: rgba(153,183,169,.14); }
+    .metric-tab.active, .tasks-tab-btn.active { box-shadow: none; }
+    .heatmap-card { gap: 2rem; }
+    .hm-cell.hm-active-2 { box-shadow: 0 0 10px rgba(0,229,153,.28); }
+
+    input, select, textarea, .form-control {
+      background: #0d1411 !important;
+      border-color: rgba(153,183,169,.18) !important;
+      color: #f3f3f3 !important;
+      border-radius: 9px !important;
+    }
+    input:focus, select:focus, textarea:focus, .form-control:focus { border-color: #00e599 !important; box-shadow: 0 0 0 3px rgba(0,229,153,.12) !important; }
+    .btn { min-height: 40px; border-radius: 9px; letter-spacing: .005em; }
+    .btn-primary { box-shadow: none; }
+    .btn-primary:hover { box-shadow: 0 8px 20px rgba(0,229,153,.18); }
+    .btn-secondary { background: #18211e; border-color: rgba(153,183,169,.18); }
+    .badge { border-radius: 999px; padding: .25rem .62rem; }
+    .modal-overlay { background: rgba(3,7,5,.78); }
+    .modal-dialog, .auth-card { background: #111817; border-color: rgba(153,183,169,.2); box-shadow: 0 28px 75px rgba(0,0,0,.55); }
+    .auth-container { background: radial-gradient(circle at 50% 0, rgba(0,229,153,.12), transparent 38%), #090d0b; }
+    .auth-card { border-radius: 18px; }
+
+    /* Page-wide responsive refinement */
+    @media (min-width: 1100px) {
+      .dashboard-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .activity-split-grid { gap: 1rem; }
+    }
+    @media (max-width: 900px) {
+      .main-content { padding: 1.25rem 1rem calc(110px + env(safe-area-inset-bottom, 0px)); gap: 1.2rem; }
+      .card { padding: 1.05rem; border-radius: 13px; }
+      .page-header { padding-bottom: .75rem; }
+      .heatmap-card { gap: 1rem; }
+      .mobile-dock-capsule, .mobile-dock-plus-btn { background: #151d1a; border-color: rgba(153,183,169,.18); box-shadow: 0 14px 32px rgba(0,0,0,.42); }
+      .mobile-dock-active-pill { background: rgba(0,229,153,.14); border-color: rgba(0,229,153,.28); }
+      .mobile-quick-actions-panel { background: #151d1a; border-color: rgba(153,183,169,.18); }
+      .mobile-quick-action-card { background: #0d1411; border-color: rgba(153,183,169,.14); }
+    }
+    @media (max-width: 480px) {
+      .main-content { padding-left: .8rem; padding-right: .8rem; }
+      .page-title { font-size: 1.45rem; }
+      .metric-value { font-size: 1.75rem; }
+      .btn { min-height: 42px; }
+    }
   </style>
 </head>
 <body>
