@@ -410,15 +410,36 @@
       background: var(--color-warning-dim);
       border-color: rgba(245, 158, 11, 0.3);
     }
+    /* Priority colors follow familiar task conventions: red = high, orange = medium, blue = low. */
+    .task-pill.priority-pill {
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .task-pill.priority-pill.priority-high {
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.14);
+      border-color: rgba(239, 68, 68, 0.30);
+    }
+    .task-pill.priority-pill.priority-medium {
+      color: #fbbf24;
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.30);
+    }
+    .task-pill.priority-pill.priority-low {
+      color: #60a5fa;
+      background: rgba(96, 165, 250, 0.13);
+      border-color: rgba(96, 165, 250, 0.30);
+    }
     .priority-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       display: inline-block;
+      flex: 0 0 auto;
     }
-    .priority-high { background-color: #ef4444; }
-    .priority-medium { background-color: #f59e0b; }
-    .priority-low { background-color: #38bdf8; }
+    .priority-dot.priority-high { background-color: #f87171; }
+    .priority-dot.priority-medium { background-color: #fbbf24; }
+    .priority-dot.priority-low { background-color: #60a5fa; }
 
     .task-row-actions {
       display: flex;
@@ -4000,7 +4021,7 @@
                             <div style="display:flex; gap:0.38rem; flex-wrap:wrap; margin-top:0.3rem; font-size:0.74rem; color:var(--text-muted);">
                               <span style="color:${isCarryover ? 'var(--color-warning)' : 'var(--color-primary)'};">${dueLabel}</span>
                               ${task.category ? `<span>&bull; ${escapeHtml(task.category)}</span>` : ''}
-                              ${priorityLabel ? `<span>&bull; ${priorityLabel}</span>` : ''}
+                              ${priorityLabel ? `<span class="task-pill priority-pill priority-${task.priority}"><span class="priority-dot priority-${task.priority}"></span>${priorityLabel}</span>` : ''}
                               ${task.is_projected_occurrence ? '<span>&bull; Recurring</span>' : ''}
                             </div>
                           </div>
@@ -4791,7 +4812,7 @@
       const occDateAttr = task.due_date || '';
 
       const priorityBadge = task.priority && task.priority !== 'none' ? `
-        <span class="task-pill" title="Priority: ${task.priority}">
+        <span class="task-pill priority-pill priority-${task.priority}" title="Priority: ${task.priority}">
           <span class="priority-dot priority-${task.priority}"></span>
           ${task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
         </span>
