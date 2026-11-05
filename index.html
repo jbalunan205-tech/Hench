@@ -1170,13 +1170,11 @@
       padding: .5rem 0;
     }
     .sidebar .brand {
-      padding: 1.8rem 1.6rem 1.65rem;
-      color: #f3f3f3;
-      font-size: 1.65rem;
-      text-transform: uppercase;
-      letter-spacing: .08em;
+      padding: 1.5rem 1.4rem 1.5rem;
+      display: flex;
+      align-items: center;
     }
-    .sidebar .brand::before { content: ''; width: 9px; height: 9px; margin-right: .55rem; border-radius: 50%; background: var(--color-primary); box-shadow: 0 0 18px rgba(0,229,153,.8); }
+    .sidebar-brand-logo { display: block; width: min(154px, 100%); height: auto; }
     .sidebar .nav-links { padding: 0 .85rem; gap: .28rem; }
     .sidebar .nav-link {
       min-height: 46px;
@@ -3566,7 +3564,13 @@
         <div class="page-header overview-page-header animate-fade-in">
           <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
             <div>
-              <h1 class="page-title">Overview</h1>
+              <h1 class="page-title">${(() => {
+                const hour = new Date().getHours();
+                const salutation = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+                const username = String(user.name || 'there').trim() || 'there';
+                return `${salutation}, ${escapeHtml(username)}`;
+              })()}</h1>
+              <p class="page-subtitle">Here&rsquo;s your fitness overview for today.</p>
             </div>
           </div>
           <div class="overview-header-actions" style="display:flex; align-items:center; gap:0.55rem; flex-wrap:wrap;">
@@ -7197,7 +7201,7 @@
           <div class="layout-wrapper" data-user-id="${user.id}">
             <aside class="sidebar" aria-label="Main Navigation">
               <div class="brand-wrap">
-                <div class="brand">Hench</div>
+                <div class="brand"><img src="hench-logo.png" class="sidebar-brand-logo" alt="Hench" /></div>
               </div>
               <nav class="nav-links" id="sidebar-nav-links">
                 ${navItems.map(n => `<a tabindex="0" role="link" data-route="/${n.toLowerCase()}" onclick="window.navigate('/${n.toLowerCase()}')" onkeydown="if(event.key==='Enter'){window.navigate('/${n.toLowerCase()}');}" class="nav-link ${currentPath === '/' + n.toLowerCase() ? 'active' : ''}">${n}</a>`).join('')}
