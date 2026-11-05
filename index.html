@@ -2834,22 +2834,20 @@
 
         const recentWorkouts = allWorkouts.slice(0, 6);
 
-        // Dashboard tasks should surface the next actionable work, including upcoming
-        // occurrences of recurring tasks, without duplicating the original occurrence.
-        const dashboardTaskHorizon = addDays(todayStr, 14);
+        // The dashboard is deliberately a "today" view. Past-due one-time tasks
+        // carry forward visually each day until completed, while recurring tasks
+        // contribute only their occurrence for today.
         const activeTasks = allTasks.filter(task => task.status === 'active');
-        const existingTaskOccurrences = new Set(activeTasks.map(task => `${task.id}|${task.due_date || ''}`));
-        const projectedTasks = this.projectRecurringInstancesForRange(allTasks, todayStr, dashboardTaskHorizon)
-          .filter(task => !existingTaskOccurrences.has(`${task.source_task_id || task.id}|${task.due_date || ''}`));
-        const taskUrgency = task => {
-          if (!task.due_date) return 3;
-          if (task.due_date < todayStr) return 0;
-          if (task.due_date === todayStr) return 1;
-          return 2;
-        };
-        const dashboardTasks = [...activeTasks, ...projectedTasks]
-          .sort((a, b) => taskUrgency(a) - taskUrgency(b)
-            || (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31')
+        const isRecurringTask = task => task.recurrence && task.recurrence.type && task.recurrence.type !== 'none';
+        const carriedForwardTasks = activeTasks
+          .filter(task => task.due_date && task.due_date < todayStr && !isRecurringTask(task))
+          .map(task => ({ ...task, is_dashboard_carryover: true }));
+        const dueTodayTasks = activeTasks.filter(task => task.due_date === todayStr);
+        const todayTaskIds = new Set(dueTodayTasks.map(task => task.id));
+        const recurringTodayTasks = this.projectRecurringInstancesForRange(activeTasks, todayStr, todayStr)
+          .filter(task => !todayTaskIds.has(task.source_task_id || task.id));
+        const dashboardTasks = [...carriedForwardTasks, ...dueTodayTasks, ...recurringTodayTasks]
+          .sort((a, b) => Number(!!b.is_dashboard_carryover) - Number(!!a.is_dashboard_carryover)
             || getPriorityWeight(b.priority) - getPriorityWeight(a.priority)
             || String(a.title || '').localeCompare(String(b.title || '')))
           .slice(0, 5);
@@ -3987,21 +3985,20 @@
                     ${stats.dashboardTasks.map(task => {
                       const realTaskId = task.source_task_id || task.id;
                       const occurrenceDate = task.due_date || '';
-                      const isOverdue = task.due_date && task.due_date < todayStr;
-                      const isToday = task.due_date === todayStr;
-                      const dueLabel = task.due_date
-                        ? `${isOverdue ? 'Overdue • ' : ''}${formatReadableDate(task.due_date, todayStr)}${task.due_time ? ` at ${task.due_time}` : ''}`
-                        : 'No due date';
+                      const isCarryover = !!task.is_dashboard_carryover;
+                      const dueLabel = isCarryover
+                        ? `Carried over from ${formatReadableDate(task.due_date, todayStr)}`
+                        : `Due today${task.due_time ? ` at ${task.due_time}` : ''}`;
                       const priorityLabel = task.priority && task.priority !== 'none'
                         ? `${task.priority.charAt(0).toUpperCase() + task.priority.slice(1)} priority`
                         : '';
                       return `
-                        <div style="display:flex; align-items:center; padding:0.72rem 0.85rem; background:var(--bg-input); border:1px solid ${isOverdue ? 'rgba(239,68,68,0.38)' : (isToday ? 'rgba(0,229,153,0.32)' : 'var(--border-color)')}; border-radius:12px; gap:0.7rem;">
+                        <div style="display:flex; align-items:center; padding:0.72rem 0.85rem; background:var(--bg-input); border:1px solid ${isCarryover ? 'rgba(245,158,11,0.42)' : 'rgba(0,229,153,0.32)'}; border-radius:12px; gap:0.7rem;">
                           <input type="checkbox" class="custom-checkbox" style="margin:0;" aria-label="Mark ${escapeHtml(task.title)} as complete" onchange="window.handleToggleTaskCheckbox(${realTaskId}, this.checked, '${occurrenceDate}')" />
                           <div style="min-width:0; flex:1;">
                             <button type="button" onclick="window.openTaskModal(${realTaskId}, '${occurrenceDate}')" style="display:block; width:100%; padding:0; border:0; background:transparent; color:var(--text-white); cursor:pointer; text-align:left; font:inherit; font-weight:700; font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(task.title)}</button>
                             <div style="display:flex; gap:0.38rem; flex-wrap:wrap; margin-top:0.3rem; font-size:0.74rem; color:var(--text-muted);">
-                              <span style="color:${isOverdue ? 'var(--color-danger)' : (isToday ? 'var(--color-primary)' : 'var(--text-muted)')};">${dueLabel}</span>
+                              <span style="color:${isCarryover ? 'var(--color-warning)' : 'var(--color-primary)'};">${dueLabel}</span>
                               ${task.category ? `<span>&bull; ${escapeHtml(task.category)}</span>` : ''}
                               ${priorityLabel ? `<span>&bull; ${priorityLabel}</span>` : ''}
                               ${task.is_projected_occurrence ? '<span>&bull; Recurring</span>' : ''}
