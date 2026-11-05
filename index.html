@@ -1409,33 +1409,38 @@
         let log = db.state.steps_log.find(s => s.user_id === u.id && s.date === date);
         const safeCount = Math.max(0, parseInt(count, 10) || 0);
         if (log) {
-            log.count = safeCount;
+          log.count = safeCount;
         } else {
-            db.state.steps_log.push({ user_id: u.id, date, count: safeCount });
+          db.state.steps_log.push({ user_id: u.id, date, count: safeCount });
         }
         db.save();
         return safeCount;
       },
 
-      async adjustStepsDelta(date, delta) {
+      async adjustStepsDelta(dateStr, deltaSteps) {
         const u = db.getAuthenticatedUser();
-        if (!u) return null;
-        const stepDelta = parseInt(delta, 10) || 0;
-        if (stepDelta === 0) return null;
+        if (!u || !dateStr) return null;
+        const delta = parseInt(deltaSteps, 10) || 0;
+        if (delta === 0) return null;
         if (!db.state.steps_log) db.state.steps_log = [];
-        let log = db.state.steps_log.find(s => s.user_id === u.id && s.date === date);
-        const prevCount = log ? (Number(log.count) || 0) : 0;
-        const newCount = Math.max(0, prevCount + stepDelta);
+        const targets = await this.getUserTargets();
+        const stepGoal = Number(targets.steps) || 10000;
+        let log = db.state.steps_log.find(s => s.user_id === u.id && s.date === dateStr);
+        const prevCount = log ? (parseInt(log.count, 10) || 0) : 0;
+        const nextCount = Math.max(0, prevCount + delta);
         if (log) {
-          log.count = newCount;
-        } else {
-          db.state.steps_log.push({ user_id: u.id, date, count: newCount });
+          log.count = nextCount;
+        } else if (nextCount > 0) {
+          db.state.steps_log.push({ user_id: u.id, date: dateStr, count: nextCount });
         }
-        db.save();
-        const target = (u.targets && Number(u.targets.steps) > 0) ? Number(u.targets.steps) : 10000;
-        return { prevCount, newCount, target, crossedGoal: prevCount < target && newCount >= target };
+        return {
+          prevCount,
+          nextCount,
+          crossedGoal: prevCount < stepGoal && nextCount >= stepGoal
+        };
       },
 
+      // --- MEALS ---
       async getMeals() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
@@ -1494,12 +1499,43 @@
         db.save();
       },
 
+      // --- WORKOUTS ---
       async getWorkouts() {
         const u = db.getAuthenticatedUser();
         if (!u) return [];
         return db.state.workouts
           .filter(w => w.user_id === u.id)
           .sort((a, b) => (b.date || '').localeCompare(a.date || '') || new Date(b.created_at) - new Date(a.created_at));
+      },
+
+      findSessionWorkoutForExercise(userId, dateStr, eventId, routineId, exerciseIdx, exId, exName) {
+        const norm = s => String(s || '').trim().toLowerCase();
+        const parsedEventId = parseOptionalNumber(eventId);
+        const parsedRoutineId = parseOptionalNumber(routineId);
+        const parsedExIdx = parseOptionalNumber(exerciseIdx);
+
+        return db.state.workouts.find(w => {
+          if (w.user_id !== userId || w.date !== dateStr) return false;
+          // 1. Match by explicit session + exercise unique ID
+          if (exId && w.routine_exercise_id === exId) {
+            if (parsedEventId !== null && w.event_id !== null) return Number(w.event_id) === parsedEventId;
+            if (parsedRoutineId !== null && w.routine_id !== null) return Number(w.routine_id) === parsedRoutineId;
+            return true;
+          }
+          // 2. Match by explicit session + exercise slot index
+          if (parsedExIdx !== null && w.routine_exercise_idx !== undefined && w.routine_exercise_idx !== null) {
+            if (Number(w.routine_exercise_idx) === parsedExIdx && norm(w.name) === norm(exName)) {
+              if (parsedEventId !== null && w.event_id !== null) return Number(w.event_id) === parsedEventId;
+              if (parsedRoutineId !== null && w.routine_id !== null) return Number(w.routine_id) === parsedRoutineId;
+              return true;
+            }
+          }
+          // 3. Fallback for legacy records in the same session
+          if (parsedEventId !== null && Number(w.event_id) === parsedEventId && (w.routine_exercise_idx === undefined || w.routine_exercise_idx === null)) {
+            return norm(w.name) === norm(exName);
+          }
+          return false;
+        });
       },
 
       async adjustDailySteps(userId, dateStr, deltaSteps) {
@@ -1524,6 +1560,41 @@
         if (!name) throw new Error('Exercise / Workout Name is required');
 
         const dateStr = data.date || getLocalDateStr();
+        const eventId = parseOptionalNumber(data.event_id);
+        const routineId = parseOptionalNumber(data.routine_id);
+        const routineExerciseIdx = parseOptionalNumber(data.routine_exercise_idx);
+        const routineExerciseId = data.routine_exercise_id || null;
+
+        // Prevent duplicate workout entries when logging an exercise from a routine session
+        if (eventId !== null || routineId !== null || routineExerciseIdx !== null || routineExerciseId !== null) {
+          const existing = this.findSessionWorkoutForExercise(
+            u.id,
+            dateStr,
+            eventId,
+            routineId,
+            routineExerciseIdx,
+            routineExerciseId,
+            name
+          );
+          if (existing) {
+            if (eventId !== null && !existing.event_id) existing.event_id = eventId;
+            if (routineId !== null && !existing.routine_id) existing.routine_id = routineId;
+            if (routineExerciseIdx !== null && existing.routine_exercise_idx === null) existing.routine_exercise_idx = routineExerciseIdx;
+            if (routineExerciseId && !existing.routine_exercise_id) existing.routine_exercise_id = routineExerciseId;
+            await this.updateWorkout(existing.id, {
+              name,
+              date: dateStr,
+              sets: data.sets !== undefined ? data.sets : existing.sets,
+              reps: data.reps !== undefined ? data.reps : existing.reps,
+              weight: data.weight !== undefined ? data.weight : existing.weight,
+              steps: data.steps !== undefined ? data.steps : existing.steps,
+              duration_minutes: data.duration_minutes !== undefined && data.duration_minutes !== null && data.duration_minutes !== '' ? data.duration_minutes : existing.duration_minutes
+            });
+            existing._stepGoalReached = false;
+            return existing;
+          }
+        }
+
         const stepsCount = parseOptionalNumber(data.steps);
         const workout = {
           id: db.state.nextIds.workout++,
@@ -1534,7 +1605,11 @@
           weight: parseOptionalNumber(data.weight, true),
           steps: stepsCount,
           duration_minutes: parseOptionalNumber(data.duration_minutes),
-          event_id: data.event_id || null,
+          event_id: eventId,
+          routine_id: routineId,
+          routine_exercise_idx: routineExerciseIdx,
+          routine_exercise_id: routineExerciseId,
+          completed: true,
           date: dateStr,
           created_at: new Date().toISOString()
         };
@@ -1616,12 +1691,16 @@
         if (!u) throw new Error('Unauthorized');
         const name = (data.name || '').trim();
         if (!name) throw new Error('Routine Name is required');
+        const routineId = db.state.nextIds.routine++;
         const routine = {
-          id: db.state.nextIds.routine++,
+          id: routineId,
           user_id: u.id,
           name,
           estimated_duration: parseOptionalNumber(data.estimated_duration),
-          exercises: Array.isArray(data.exercises) ? data.exercises.map(ex => ({ ...ex })) : [],
+          exercises: Array.isArray(data.exercises) ? data.exercises.map((ex, idx) => ({
+            ...ex,
+            id: ex.id || `rex_${routineId}_${idx}_${Math.random().toString(36).slice(2, 7)}`
+          })) : [],
           created_at: new Date().toISOString()
         };
         db.state.routines.unshift(routine);
@@ -1643,7 +1722,12 @@
         if (!r) throw new Error('Routine not found');
         if (data.name !== undefined) r.name = data.name.trim();
         if (data.estimated_duration !== undefined) r.estimated_duration = parseOptionalNumber(data.estimated_duration);
-        if (data.exercises !== undefined) r.exercises = data.exercises.map(ex => ({ ...ex }));
+        if (data.exercises !== undefined) {
+          r.exercises = data.exercises.map((ex, idx) => ({
+            ...ex,
+            id: ex.id || `rex_${r.id}_${idx}_${Math.random().toString(36).slice(2, 7)}`
+          }));
+        }
         db.save();
         return r;
       },
@@ -1722,71 +1806,87 @@
         const evt = db.state.events.find(e => e.id === eventId && e.user_id === u.id);
         if (!evt) throw new Error('Scheduled session not found');
 
-        const routine = db.state.routines.find(r => r.user_id === u.id && r.name === evt.title);
+        const norm = s => String(s || '').trim().toLowerCase();
+        const routine = db.state.routines.find(r => r.user_id === u.id && norm(r.name) === norm(evt.title));
         const resolvedDuration = parseOptionalNumber(durationMinutes) || evt.estimated_duration || null;
 
         if (markComplete) {
-          evt.status = 'completed';
           if (routine && routine.exercises && routine.exercises.length > 0) {
-            let addedStepsTotal = 0;
-            routine.exercises.forEach((ex, idx) => {
-              const exists = db.state.workouts.some(w => w.user_id === u.id && w.date === evt.date && w.name === ex.name);
-              if (!exists) {
-                const exSteps = parseOptionalNumber(ex.steps);
-                if (exSteps && exSteps > 0) addedStepsTotal += exSteps;
-                db.state.workouts.unshift({
-                  id: db.state.nextIds.workout++,
-                  user_id: u.id,
-                  name: ex.name,
-                  sets: ex.sets || null,
-                  reps: ex.reps || null,
-                  weight: ex.weight || null,
-                  steps: exSteps || null,
-                  duration_minutes: idx === 0 ? resolvedDuration : null,
-                  event_id: evt.id,
-                  date: evt.date,
-                  created_at: new Date().toISOString()
-                });
+            // Routine is the source of truth: ONLY finalize exercises that were actually checked off.
+            // Never auto-insert unchecked exercises from the routine into the Workout Log.
+            const sessionWorkouts = db.state.workouts.filter(w => {
+              if (w.user_id !== u.id || w.date !== evt.date) return false;
+              if (Number(w.event_id) === Number(evt.id)) return true;
+              if (w.event_id === null && Number(w.routine_id) === Number(routine.id)) return true;
+              return false;
+            });
+
+            if (sessionWorkouts.length === 0) {
+              throw new Error('Please check off at least one completed exercise before completing this routine session.');
+            }
+
+            // Link any checked exercises on this date/routine to this session event & apply session duration if not already set
+            sessionWorkouts.forEach((w, idx) => {
+              if (!w.event_id) w.event_id = evt.id;
+              if (!w.routine_id) w.routine_id = routine.id;
+              if (idx === 0 && resolvedDuration !== null && (w.duration_minutes === null || w.duration_minutes === undefined)) {
+                w.duration_minutes = resolvedDuration;
               }
             });
-            if (addedStepsTotal > 0) {
-              await this.adjustStepsDelta(evt.date, addedStepsTotal);
-            }
+
+            evt.status = 'completed';
+            evt.manual_completed = true;
           } else {
-            const w = {
-              id: db.state.nextIds.workout++,
-              user_id: u.id,
-              name: evt.title,
-              sets: null,
-              reps: null,
-              weight: null,
-              steps: null,
-              duration_minutes: resolvedDuration,
-              event_id: evt.id,
-              date: evt.date,
-              created_at: new Date().toISOString()
-            };
-            db.state.workouts.unshift(w);
-            evt.completed_workout_id = w.id;
+            // Standalone custom session without a routine template: avoid duplicate creation if already logged
+            evt.status = 'completed';
+            evt.manual_completed = true;
+            const existingStandalone = db.state.workouts.find(w =>
+              w.user_id === u.id &&
+              w.date === evt.date &&
+              (Number(w.event_id) === Number(evt.id) || (evt.completed_workout_id && w.id === evt.completed_workout_id))
+            );
+            if (existingStandalone) {
+              if (resolvedDuration !== null) existingStandalone.duration_minutes = resolvedDuration;
+              evt.completed_workout_id = existingStandalone.id;
+            } else {
+              const w = {
+                id: db.state.nextIds.workout++,
+                user_id: u.id,
+                name: evt.title,
+                sets: null,
+                reps: null,
+                weight: null,
+                steps: null,
+                duration_minutes: resolvedDuration,
+                event_id: evt.id,
+                routine_id: null,
+                routine_exercise_idx: null,
+                routine_exercise_id: null,
+                completed: true,
+                date: evt.date,
+                created_at: new Date().toISOString()
+              };
+              db.state.workouts.unshift(w);
+              evt.completed_workout_id = w.id;
+            }
           }
         } else {
-          evt.status = 'scheduled';
-          if (evt.completed_workout_id) {
-            const removedW = db.state.workouts.find(w => w.id === evt.completed_workout_id && w.user_id === u.id);
-            if (removedW && Number(removedW.steps) > 0) {
-              await this.adjustStepsDelta(evt.date, -Number(removedW.steps));
-            }
-            db.state.workouts = db.state.workouts.filter(w => !(w.id === evt.completed_workout_id && w.user_id === u.id));
-            evt.completed_workout_id = null;
-          }
+          evt.manual_completed = false;
           if (routine && routine.exercises && routine.exercises.length > 0) {
-            const exNames = new Set(routine.exercises.map(ex => ex.name));
-            const toRemove = db.state.workouts.filter(w => w.user_id === u.id && w.date === evt.date && (w.event_id === evt.id || exNames.has(w.name)));
-            const removedSteps = toRemove.reduce((sum, w) => sum + (Number(w.steps) || 0), 0);
-            if (removedSteps > 0) {
-              await this.adjustStepsDelta(evt.date, -removedSteps);
+            const sessionWorkouts = db.state.workouts.filter(w =>
+              w.user_id === u.id && w.date === evt.date && (Number(w.event_id) === Number(evt.id) || (w.event_id === null && Number(w.routine_id) === Number(routine.id)))
+            );
+            evt.status = sessionWorkouts.length > 0 ? 'in_progress' : 'scheduled';
+          } else {
+            evt.status = 'scheduled';
+            if (evt.completed_workout_id) {
+              const removedW = db.state.workouts.find(w => w.id === evt.completed_workout_id && w.user_id === u.id);
+              if (removedW && Number(removedW.steps) > 0) {
+                await this.adjustStepsDelta(evt.date, -Number(removedW.steps));
+              }
+              db.state.workouts = db.state.workouts.filter(w => !(w.id === evt.completed_workout_id && w.user_id === u.id));
+              evt.completed_workout_id = null;
             }
-            db.state.workouts = db.state.workouts.filter(w => !(w.user_id === u.id && w.date === evt.date && (w.event_id === evt.id || exNames.has(w.name))));
           }
         }
         db.save();
@@ -1799,27 +1899,81 @@
         db.save();
       },
 
+      matchRoutineExercisesToWorkouts(routine, dayWorkouts, eventId = null) {
+        const matches = new Map();
+        if (!routine || !Array.isArray(routine.exercises)) return matches;
+        const usedIds = new Set();
+        const norm = s => String(s || '').trim().toLowerCase();
+        const parsedEvtId = parseOptionalNumber(eventId);
+
+        const sessionWorkouts = dayWorkouts.filter(w => {
+          if (parsedEvtId !== null) {
+            return Number(w.event_id) === parsedEvtId || (w.event_id === null && (Number(w.routine_id) === Number(routine.id) || w.routine_id === null || w.routine_id === undefined));
+          }
+          return Number(w.routine_id) === Number(routine.id) || w.routine_id === null || w.routine_id === undefined;
+        });
+
+        // Pass 1: Match by explicit routine_exercise_id or routine_exercise_idx
+        routine.exercises.forEach((ex, idx) => {
+          const found = sessionWorkouts.find(w => {
+            if (usedIds.has(w.id)) return false;
+            if (ex.id && w.routine_exercise_id && w.routine_exercise_id === ex.id) return true;
+            if (w.routine_exercise_idx !== undefined && w.routine_exercise_idx !== null && Number(w.routine_exercise_idx) === idx && norm(w.name) === norm(ex.name)) return true;
+            return false;
+          });
+          if (found) {
+            usedIds.add(found.id);
+            matches.set(idx, found);
+          }
+        });
+
+        // Pass 2: Fallback for legacy workouts without index/id
+        routine.exercises.forEach((ex, idx) => {
+          if (matches.has(idx)) return;
+          const found = sessionWorkouts.find(w => {
+            if (usedIds.has(w.id)) return false;
+            if (w.routine_exercise_idx !== undefined && w.routine_exercise_idx !== null) return false;
+            return norm(w.name) === norm(ex.name);
+          });
+          if (found) {
+            usedIds.add(found.id);
+            matches.set(idx, found);
+          }
+        });
+
+        return matches;
+      },
+
       syncEventsWithWorkouts(userId, dateStr) {
         if (!dateStr) return;
+        const norm = s => String(s || '').trim().toLowerCase();
         const dayWorkouts = db.state.workouts.filter(w => w.user_id === userId && w.date === dateStr);
         const dayEvents = db.state.events.filter(e => e.user_id === userId && e.date === dateStr && e.status !== 'cancelled');
 
         dayEvents.forEach(evt => {
-          const routine = db.state.routines.find(r => r.user_id === userId && r.name === evt.title);
+          const routine = db.state.routines.find(r => r.user_id === userId && norm(r.name) === norm(evt.title));
           if (routine && routine.exercises && routine.exercises.length > 0) {
-            const completedCount = routine.exercises.filter(ex => dayWorkouts.some(dw => dw.name === ex.name)).length;
-            if (completedCount === routine.exercises.length) {
+            const matchMap = this.matchRoutineExercisesToWorkouts(routine, dayWorkouts, evt.id);
+            const completedCount = matchMap.size;
+            if (completedCount === routine.exercises.length && routine.exercises.length > 0) {
               evt.status = 'completed';
             } else if (completedCount > 0) {
-              evt.status = 'in_progress';
-            } else if (evt.status === 'completed') {
-              evt.status = 'scheduled';
+              if (evt.manual_completed) {
+                evt.status = 'completed';
+              } else {
+                evt.status = 'in_progress';
+              }
+            } else {
+              evt.manual_completed = false;
+              if (evt.status === 'completed' || evt.status === 'in_progress') {
+                evt.status = 'scheduled';
+              }
             }
           } else if (evt.completed_workout_id) {
             const stillExists = dayWorkouts.some(dw => dw.id === evt.completed_workout_id);
             evt.status = stillExists ? 'completed' : 'scheduled';
           } else {
-            const matchingName = dayWorkouts.some(dw => dw.name.toLowerCase() === evt.title.toLowerCase());
+            const matchingName = dayWorkouts.some(dw => Number(dw.event_id) === Number(evt.id) || norm(dw.name) === norm(evt.title));
             if (matchingName) evt.status = 'completed';
           }
         });
@@ -1831,14 +1985,12 @@
         const dayWorkouts = userWorkouts.filter(w => w.date === evt.date);
         const routine = userRoutines.find(r => norm(r.name) === norm(evt.title));
         if (routine && routine.exercises && routine.exercises.length > 0) {
-          return routine.exercises.every((ex, idx) => {
-            const exCount = routine.exercises.slice(0, idx + 1).filter(e => norm(e.name) === norm(ex.name)).length;
-            const loggedCount = dayWorkouts.filter(dw => norm(dw.name) === norm(ex.name)).length;
-            return loggedCount >= exCount;
-          });
+          const matchMap = this.matchRoutineExercisesToWorkouts(routine, dayWorkouts, evt.id);
+          if (evt.status === 'completed' && matchMap.size > 0) return true;
+          return matchMap.size === routine.exercises.length && routine.exercises.length > 0;
         }
         if (evt.status === 'completed') return true;
-        return dayWorkouts.some(dw => dw.event_id === evt.id || norm(dw.name) === norm(evt.title));
+        return dayWorkouts.some(dw => Number(dw.event_id) === Number(evt.id) || norm(dw.name) === norm(evt.title));
       },
 
       getEventProgress(evt, userWorkouts, userRoutines) {
@@ -1847,13 +1999,17 @@
         const routine = userRoutines.find(r => norm(r.name) === norm(evt.title));
         if (routine && routine.exercises && routine.exercises.length > 0) {
           const total = routine.exercises.length;
-          let done = 0;
-          routine.exercises.forEach((ex, idx) => {
-            const exCount = routine.exercises.slice(0, idx + 1).filter(e => norm(e.name) === norm(ex.name)).length;
-            const loggedCount = dayWorkouts.filter(dw => norm(dw.name) === norm(ex.name)).length;
-            if (loggedCount >= exCount) done++;
-          });
-          return { hasRoutine: true, routine, done, total, isCompleted: done === total && total > 0, isInProgress: (done > 0 && done < total) || evt.status === 'in_progress' };
+          const matchMap = this.matchRoutineExercisesToWorkouts(routine, dayWorkouts, evt.id);
+          const done = matchMap.size;
+          const isCompleted = (done === total && total > 0) || (evt.status === 'completed' && done > 0);
+          return {
+            hasRoutine: true,
+            routine,
+            done,
+            total,
+            isCompleted,
+            isInProgress: !isCompleted && (done > 0 || evt.status === 'in_progress')
+          };
         }
         const isCompleted = this.isEventCompleted(evt, userWorkouts, userRoutines);
         return { hasRoutine: false, routine: null, done: isCompleted ? 1 : 0, total: 1, isCompleted, isInProgress: evt.status === 'in_progress' && !isCompleted };
@@ -5468,6 +5624,9 @@
       const exSteps = stepInput ? stepInput.value : checkbox.getAttribute('data-steps');
       const dateStr = checkbox.getAttribute('data-date') || getLocalDateStr();
       const eventIdAttr = checkbox.getAttribute('data-event-id');
+      const routineIdAttr = checkbox.getAttribute('data-routine-id');
+      const exIdxAttr = checkbox.getAttribute('data-ex-idx');
+      const exIdAttr = checkbox.getAttribute('data-ex-id');
       const durInput = document.getElementById('modal-routine-duration') || document.getElementById('evt-complete-duration');
       const durationMin = durInput && durInput.value ? durInput.value : null;
 
@@ -5482,6 +5641,9 @@
             steps: exSteps,
             duration_minutes: durationMin,
             event_id: eventIdAttr ? parseInt(eventIdAttr, 10) : null,
+            routine_id: routineIdAttr ? parseInt(routineIdAttr, 10) : null,
+            routine_exercise_idx: exIdxAttr !== null && exIdxAttr !== '' ? parseInt(exIdxAttr, 10) : null,
+            routine_exercise_id: exIdAttr || null,
             date: dateStr
           });
           checkbox.dataset.workoutId = w.id;
@@ -5496,9 +5658,19 @@
         } else {
           let targetWorkoutId = checkbox.dataset.workoutId ? parseInt(checkbox.dataset.workoutId, 10) : null;
           if (!targetWorkoutId) {
-            const allWorkouts = await api.getWorkouts();
-            const matched = allWorkouts.find(w => w.date === dateStr && String(w.name || '').trim().toLowerCase() === exName.toLowerCase());
-            if (matched) targetWorkoutId = matched.id;
+            const u = db.getAuthenticatedUser();
+            if (u) {
+              const matched = api.findSessionWorkoutForExercise(
+                u.id,
+                dateStr,
+                eventIdAttr,
+                routineIdAttr,
+                exIdxAttr,
+                exIdAttr,
+                exName
+              );
+              if (matched) targetWorkoutId = matched.id;
+            }
           }
           if (targetWorkoutId) {
             await api.deleteWorkout(targetWorkoutId);
@@ -5521,30 +5693,40 @@
       }
     };
 
-    function renderChecklistExerciseRowHTML(ex, matchedWorkout, dateStr, eventId = null) {
+    function renderChecklistExerciseRowHTML(ex, matchedWorkout, dateStr, eventId = null, routineId = null, exIdx = null) {
       const checked = !!matchedWorkout;
       const wId = matchedWorkout ? matchedWorkout.id : '';
       const isStepBased = (Number(ex.steps) > 0) || /walk|step|run|jog|hike|cardio|treadmill/i.test(ex.name || '');
       const currentStepsVal = matchedWorkout && matchedWorkout.steps !== null && matchedWorkout.steps !== undefined
         ? matchedWorkout.steps
         : (ex.steps || '');
+      const displayEx = matchedWorkout ? {
+        name: matchedWorkout.name,
+        sets: matchedWorkout.sets !== null && matchedWorkout.sets !== undefined ? matchedWorkout.sets : ex.sets,
+        reps: matchedWorkout.reps !== null && matchedWorkout.reps !== undefined ? matchedWorkout.reps : ex.reps,
+        weight: matchedWorkout.weight !== null && matchedWorkout.weight !== undefined ? matchedWorkout.weight : ex.weight,
+        steps: currentStepsVal
+      } : ex;
 
       return `
         <div class="routine-ex-row" style="display:flex; align-items:center; justify-content:space-between; gap:0.65rem; padding:0.75rem 0.9rem; background:var(--bg-input); border:1px solid ${checked ? 'rgba(0, 229, 153, 0.35)' : 'var(--border-color)'}; border-radius:12px; transition:var(--transition); flex-wrap:wrap;">
           <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; flex:1; min-width:165px;">
             <input type="checkbox" class="custom-checkbox" ${checked ? 'checked' : ''}
                    data-workout-id="${wId}"
-                   ${eventId ? `data-event-id="${eventId}"` : ''}
+                   ${eventId !== null && eventId !== undefined ? `data-event-id="${eventId}"` : ''}
+                   ${routineId !== null && routineId !== undefined ? `data-routine-id="${routineId}"` : ''}
+                   ${exIdx !== null && exIdx !== undefined ? `data-ex-idx="${exIdx}"` : ''}
+                   ${ex.id ? `data-ex-id="${escapeHtml(ex.id)}"` : ''}
                    data-name="${escapeHtml(ex.name)}"
-                   data-sets="${ex.sets || ''}"
-                   data-reps="${ex.reps || ''}"
-                   data-weight="${ex.weight || ''}"
+                   data-sets="${displayEx.sets !== null && displayEx.sets !== undefined ? displayEx.sets : ''}"
+                   data-reps="${displayEx.reps !== null && displayEx.reps !== undefined ? displayEx.reps : ''}"
+                   data-weight="${displayEx.weight !== null && displayEx.weight !== undefined ? displayEx.weight : ''}"
                    data-steps="${currentStepsVal}"
                    data-date="${dateStr}"
                    onchange="window.toggleRoutineExercise(this)" />
             <div class="routine-ex-title" style="font-weight:600; font-size:0.9rem; transition:color 0.2s; color:${checked ? 'var(--color-primary)' : 'var(--text-white)'}">
               ${escapeHtml(ex.name)}
-              <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.35rem;">${formatExerciseCompact(ex)}</span>
+              <span style="font-weight:400; font-size:0.78rem; color:var(--text-muted); margin-left:0.35rem;">${formatExerciseCompact(displayEx)}</span>
             </div>
           </label>
           ${isStepBased ? `
@@ -5564,7 +5746,7 @@
       if (!routine) return;
       const workouts = await api.getWorkouts();
       const dayWorkouts = workouts.filter(w => w.date === dateStr);
-      const usedWorkoutIds = new Set();
+      const matchMap = api.matchRoutineExercisesToWorkouts(routine, dayWorkouts, null);
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="document.getElementById('modal-root').innerHTML = ''">
@@ -5576,11 +5758,9 @@
               <input type="number" id="modal-routine-duration" min="1" />
             </div>
             <div style="display:flex; flex-direction:column; gap:0.55rem;">
-              ${routine.exercises && routine.exercises.length ? routine.exercises.map(ex => {
-                const normName = String(ex.name || '').trim().toLowerCase();
-                const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
-                if (matched) usedWorkoutIds.add(matched.id);
-                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null);
+              ${routine.exercises && routine.exercises.length ? routine.exercises.map((ex, idx) => {
+                const matched = matchMap.get(idx) || null;
+                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null, routine.id || null, idx);
               }).join('') : '<p style="color:var(--text-dim)">No exercises added to this split template.</p>'}
             </div>
           </div>
@@ -5603,7 +5783,7 @@
       const prog = api.getEventProgress(evt, workouts, routines);
       const { routine, isCompleted, isInProgress } = prog;
       const dayWorkouts = workouts.filter(w => w.date === evt.date);
-      const usedWorkoutIds = new Set();
+      const matchMap = routine ? api.matchRoutineExercisesToWorkouts(routine, dayWorkouts, evt.id) : new Map();
 
       const badgeCls = evt.status === 'cancelled'
         ? 'badge-cancelled'
@@ -5637,11 +5817,9 @@
                 <div style="margin-bottom:1.1rem;">
                   <div id="evt-routine-progress-header" style="font-size:0.76rem; font-weight:700; color:var(--text-muted); margin-bottom:0.5rem; text-transform:uppercase;">Routine Exercises (${prog.done}/${prog.total} Completed)</div>
                   <div style="display:flex; flex-direction:column; gap:0.5rem;">
-                    ${routine.exercises.map(ex => {
-                      const normName = String(ex.name || '').trim().toLowerCase();
-                      const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
-                      if (matched) usedWorkoutIds.add(matched.id);
-                      return renderChecklistExerciseRowHTML(ex, matched, evt.date, evt.id);
+                    ${routine.exercises.map((ex, idx) => {
+                      const matched = matchMap.get(idx) || null;
+                      return renderChecklistExerciseRowHTML(ex, matched, evt.date, evt.id, routine.id || null, idx);
                     }).join('')}
                   </div>
                 </div>
@@ -5681,16 +5859,20 @@
     };
 
     window.handleToggleEventComplete = async (eventId, markComplete) => {
-      const durElem = document.getElementById('evt-complete-duration');
-      const dur = durElem ? durElem.value : null;
-      await api.toggleEventCompletion(eventId, markComplete, dur);
-      document.getElementById('modal-root').innerHTML = '';
-      if (markComplete) {
-         window.showCelebrationModal("Workout Complete! 💪", "Great work crushing your session today! Keep up the momentum.");
-      } else {
-         showToast('Session marked uncompleted.');
+      try {
+        const durElem = document.getElementById('evt-complete-duration');
+        const dur = durElem ? durElem.value : null;
+        await api.toggleEventCompletion(eventId, markComplete, dur);
+        document.getElementById('modal-root').innerHTML = '';
+        if (markComplete) {
+          window.showCelebrationModal("Workout Complete!", "Great work crushing your session today! Keep up the momentum.");
+        } else {
+          showToast('Session marked uncompleted.');
+        }
+        renderApp();
+      } catch (e) {
+        showToast(e.message, 'error');
       }
-      renderApp();
     };
 
     window.handleRescheduleEvent = async (eventId) => {
@@ -5715,6 +5897,96 @@
       document.getElementById('modal-root').innerHTML = '';
       showToast('Scheduled session deleted.');
       renderApp();
+    };
+
+    window.playCelebrationSound = () => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.09);
+          gain.gain.setValueAtTime(0.001, ctx.currentTime + i * 0.09);
+          gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + i * 0.09 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.09 + 0.45);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + i * 0.09);
+          osc.stop(ctx.currentTime + i * 0.09 + 0.46);
+        });
+      } catch (e) {}
+    };
+
+    window.showCelebrationModal = (title, message) => {
+      window.playCelebrationSound();
+      const root = document.getElementById('modal-root');
+      if (!root) return;
+      const particles = Array.from({ length: 28 }).map((_, i) => {
+        const angle = (i / 28) * Math.PI * 2;
+        const dist = 70 + Math.random() * 110;
+        const tx = Math.cos(angle) * dist;
+        const ty = Math.sin(angle) * dist - 20;
+        const colors = ['#00e599', '#38bdf8', '#f59e0b', '#a855f7', '#ffffff'];
+        const color = colors[i % colors.length];
+        return `<span style="position:absolute; left:50%; top:45%; width:7px; height:7px; border-radius:50%; background:${color}; box-shadow:0 0 8px ${color}; pointer-events:none; animation:celebParticle 1.2s cubic-bezier(0.16,1,0.3,1) forwards; --tx:${tx}px; --ty:${ty}px;"></span>`;
+      }).join('');
+
+      root.innerHTML = `
+        <style>
+          @keyframes celebParticle {
+            0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+            80% { opacity: 0.95; }
+            100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0); opacity: 0; }
+          }
+          @keyframes celebFadeInOut {
+            0% { opacity: 0; transform: scale(0.92) translateY(10px); }
+            12% { opacity: 1; transform: scale(1) translateY(0); }
+            82% { opacity: 1; transform: scale(1) translateY(0); }
+            100% { opacity: 0; transform: scale(0.96) translateY(-6px); }
+          }
+        </style>
+        <div id="celebration-overlay" class="modal-overlay" style="background:radial-gradient(circle at center, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.2) 70%, transparent 100%); backdrop-filter:blur(6px);" onclick="closeModal()">
+          <div class="modal-dialog" style="max-width:380px; text-align:center; padding:2.2rem 1.75rem; border-radius:28px; border:1px solid rgba(0,229,153,0.35); background:radial-gradient(circle at center, rgba(22,28,28,0.96) 0%, rgba(14,15,20,0.88) 75%, rgba(14,15,20,0.65) 100%); box-shadow:0 0 50px rgba(0,229,153,0.25), 0 20px 50px rgba(0,0,0,0.7); animation:celebFadeInOut 3s cubic-bezier(0.22, 1, 0.36, 1) forwards; overflow:visible;">
+            ${particles}
+            <div style="width:56px; height:56px; margin:0 auto 0.9rem auto; border-radius:50%; background:var(--color-primary-dim); border:1px solid rgba(0,229,153,0.4); display:flex; align-items:center; justify-content:center; color:var(--color-primary);">
+              ${SVGs.trophy}
+            </div>
+            <h3 style="font-family:var(--font-display); font-size:1.45rem; font-weight:800; color:var(--text-white); margin-bottom:0.45rem;">${escapeHtml(title)}</h3>
+            <p style="color:var(--text-muted); font-size:0.9rem; line-height:1.45;">${escapeHtml(message)}</p>
+          </div>
+        </div>
+      `;
+      clearTimeout(window._celebTimer);
+      window._celebTimer = setTimeout(() => {
+        if (document.getElementById('celebration-overlay')) closeModal();
+      }, 3000);
+    };
+
+    window.setExactSteps = async (val, dateStr) => {
+      const targetDate = dateStr || window.dashboardSelectedDate || getLocalDateStr();
+      const parsed = parseInt(val, 10);
+      if (Number.isNaN(parsed) || parsed < 0) return showToast('Enter a valid step count.', 'error');
+      const statsBefore = await api.getDashboardStats(targetDate);
+      const prevSteps = statsBefore.steps.count;
+      const stepTarget = statsBefore.steps.target || 10000;
+      await api.logSteps(targetDate, parsed);
+      await renderApp({ isRouteChange: false, preserveScroll: true });
+      if (prevSteps < stepTarget && parsed >= stepTarget) {
+        window.showCelebrationModal('Step Goal Reached!', `Congratulations! You reached your daily goal of ${stepTarget.toLocaleString()} steps!`);
+      } else {
+        showToast(`Steps updated to ${parsed.toLocaleString()}!`);
+      }
+    };
+
+    window.resetSteps = async (dateStr) => {
+      const targetDate = dateStr || window.dashboardSelectedDate || getLocalDateStr();
+      await api.logSteps(targetDate, 0);
+      showToast('Step counter reset to 0.');
+      await renderApp({ isRouteChange: false, preserveScroll: true });
     };
 
     window.setTasksSubView = (view) => {
@@ -5800,31 +6072,9 @@
       }
     };
 
-    window.openRoutineChecklistModal = async (routine, dateStr) => {
-      if (!routine) return;
-      const workouts = await api.getWorkouts();
-      const dayWorkouts = workouts.filter(w => w.date === dateStr);
-      const usedWorkoutIds = new Set();
-
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="closeModal()">
-          <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
-            <h3 class="card-title" style="margin-top:0; padding-right:2.2rem; font-size:1.35rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
-            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.85rem;">Completion Date: <strong>${dateStr}</strong> &bull; Check off completed exercises below</p>
-            <div class="form-group" style="margin-bottom:1rem;">
-              <div class="form-label-wrap"><label for="modal-routine-duration">Duration per Exercise (min)</label><span class="label-optional">(Optional)</span></div>
-              <input type="number" id="modal-routine-duration" min="1" />
-            </div>
-            <div style="display:flex; flex-direction:column; gap:0.55rem;">
-              ${routine.exercises && routine.exercises.length ? routine.exercises.map(ex => {
-                const normName = String(ex.name || '').trim().toLowerCase();
-                const matched = dayWorkouts.find(w => !usedWorkoutIds.has(w.id) && String(w.name || '').trim().toLowerCase() === normName);
-                if (matched) usedWorkoutIds.add(matched.id);
-                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null);
-              }).join('') : '<p style="color:var(--text-dim)">No exercises added to this split template.</p>'}
-            </div>
-          </div>
-        </div>`;
+    window.handleToggleSubtask = async (taskId, subtaskIdx) => {
+      await api.toggleTaskSubtask(taskId, subtaskIdx);
+      renderApp({ isRouteChange: false, preserveScroll: true });
     };
 
     window.handleDismissReminder = async (taskId, snoozeMin) => {
@@ -5960,15 +6210,15 @@
     };
 
     window.confirmRecurringTaskDelete = async (taskId, scope, occurrenceDate) => {
-        document.getElementById('modal-root').innerHTML = '';
-        if (scope === 'occurrence') {
-            await api.skipOrDeleteTaskOccurrence(taskId, occurrenceDate);
-            showToast('Occurrence skipped.');
-        } else {
-            await api.deleteTaskSeries(taskId);
-            showToast('Recurring series deleted.');
-        }
-        renderApp({ isRouteChange: false, preserveScroll: true });
+      document.getElementById('modal-root').innerHTML = '';
+      if (scope === 'occurrence') {
+        await api.skipOrDeleteTaskOccurrence(taskId, occurrenceDate);
+        showToast('Occurrence skipped.');
+      } else {
+        await api.deleteTaskSeries(taskId);
+        showToast('Recurring series deleted.');
+      }
+      renderApp({ isRouteChange: false, preserveScroll: true });
     };
 
     window.viewRoutineByDate = async (routineName, dateStr) => {
@@ -6022,131 +6272,29 @@
       }
     };
 
-    window.showCelebrationModal = (title, message) => {
-      const root = document.getElementById('modal-root');
-      root.innerHTML = `
-        <div id="celebration-overlay" class="modal-overlay" style="background: rgba(0,0,0,0.5); transition: opacity 0.5s ease; z-index: 10001;">
-          <div class="modal-dialog" role="dialog" aria-modal="true" style="
-              max-width:420px; text-align:center; padding: 3.5rem 2.5rem;
-              background: radial-gradient(circle at center, var(--bg-surface-elevated) 15%, rgba(10,12,16,0.95) 100%);
-              border: 1px solid rgba(0, 229, 153, 0.4);
-              box-shadow: 0 0 50px rgba(0, 229, 153, 0.25), inset 0 0 80px rgba(0,0,0,0.9);
-              border-radius: 28px;
-              transform: scale(1);
-              animation: celebPopIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-          ">
-            <div style="font-size:5rem; margin-bottom:1.25rem; animation: celebFloat 2.5s ease-in-out infinite;">🎉</div>
-            <h3 class="card-title" style="justify-content:center; font-size:1.8rem; color:var(--color-primary); margin-bottom:0.85rem; text-shadow: 0 0 15px rgba(0,229,153,0.5); line-height: 1.1;">${escapeHtml(title)}</h3>
-            <p style="color:var(--text-white); font-size:1.05rem; margin-bottom:0; line-height:1.6; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">${escapeHtml(message)}</p>
+    window.openRoutineChecklistModal = async (routine, dateStr) => {
+      if (!routine) return;
+      const workouts = await api.getWorkouts();
+      const dayWorkouts = workouts.filter(w => w.date === dateStr);
+      const matchMap = api.matchRoutineExercisesToWorkouts(routine, dayWorkouts, null);
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="closeModal()">
+          <div class="modal-dialog" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+            <h3 class="card-title" style="margin-top:0; padding-right:2.2rem; font-size:1.35rem; font-family:var(--font-display);">${escapeHtml(routine.name)}</h3>
+            <p style="color:var(--text-dim); margin-bottom:1rem; font-size:0.85rem;">Completion Date: <strong>${dateStr}</strong> &bull; Check off completed exercises below</p>
+            <div class="form-group" style="margin-bottom:1rem;">
+              <div class="form-label-wrap"><label for="modal-routine-duration">Duration per Exercise (min)</label><span class="label-optional">(Optional)</span></div>
+              <input type="number" id="modal-routine-duration" min="1" />
+            </div>
+            <div style="display:flex; flex-direction:column; gap:0.55rem;">
+              ${routine.exercises && routine.exercises.length ? routine.exercises.map((ex, idx) => {
+                const matched = matchMap.get(idx) || null;
+                return renderChecklistExerciseRowHTML(ex, matched, dateStr, null, routine.id || null, idx);
+              }).join('') : '<p style="color:var(--text-dim)">No exercises added to this split template.</p>'}
+            </div>
           </div>
-        </div>
-      `;
-
-      if (!document.getElementById('celebration-styles')) {
-          const style = document.createElement('style');
-          style.id = 'celebration-styles';
-          style.innerHTML = `
-              @keyframes celebPopIn {
-                  0% { opacity: 0; transform: scale(0.8) translateY(30px); }
-                  100% { opacity: 1; transform: scale(1) translateY(0); }
-              }
-              @keyframes celebFloat {
-                  0%, 100% { transform: translateY(0) rotate(0deg); }
-                  50% { transform: translateY(-12px) rotate(4deg); }
-              }
-          `;
-          document.head.appendChild(style);
-      }
-
-      // Synthesize a quick, satisfying happy chime 
-      try {
-          const AudioContext = window.AudioContext || window.webkitAudioContext;
-          if (AudioContext) {
-              const ctx = new AudioContext();
-              if (ctx.state === 'suspended') ctx.resume();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.type = 'triangle';
-              
-              const now = ctx.currentTime;
-              osc.frequency.setValueAtTime(523.25, now); // C5
-              osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
-              osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
-              osc.frequency.setValueAtTime(1046.50, now + 0.35); // C6
-              
-              gain.gain.setValueAtTime(0, now);
-              gain.gain.linearRampToValueAtTime(0.25, now + 0.05);
-              gain.gain.setValueAtTime(0.25, now + 0.35);
-              gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
-              
-              osc.start(now);
-              osc.stop(now + 1.2);
-          }
-      } catch (e) { console.log('Audio playback ignored/unavailable'); }
-
-      // Fire fireworks confetti using canvas-confetti library
-      const fireConfetti = () => {
-          if (!window.confetti) return;
-          const duration = 2500;
-          const end = Date.now() + duration;
-          (function frame() {
-              window.confetti({ particleCount: 6, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#00e599', '#ffffff', '#f59e0b'], zIndex: 10002 });
-              window.confetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#00e599', '#ffffff', '#f59e0b'], zIndex: 10002 });
-              if (Date.now() < end) requestAnimationFrame(frame);
-          }());
-      };
-
-      if (!window.confetti) {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js';
-          script.onload = fireConfetti;
-          document.head.appendChild(script);
-      } else {
-          fireConfetti();
-      }
-
-      // Automatically fade out and close after 3 seconds
-      setTimeout(() => {
-          const overlay = document.getElementById('celebration-overlay');
-          if (overlay) {
-              overlay.style.opacity = '0';
-              setTimeout(() => { if (root.contains(overlay)) root.innerHTML = ''; }, 500);
-          }
-      }, 3000);
-    };
-
-    window.resetSteps = async (dateStr) => {
-      try {
-        await api.logSteps(dateStr, 0);
-        renderApp({ isRouteChange: false, preserveScroll: true });
-        showToast('Steps reset to 0.');
-      } catch(e) {
-        showToast(e.message, 'error');
-      }
-    };
-
-    window.setExactSteps = async (val, dateStr) => {
-      try {
-        if(!val || val.trim() === '') return;
-        const target = (await api.getUserTargets()).steps || 10000;
-        const u = db.getAuthenticatedUser();
-        const stepLog = (db.state.steps_log || []).find(s => s.user_id === u.id && s.date === dateStr);
-        const current = stepLog ? stepLog.count : 0;
-        const newTotal = parseInt(val, 10);
-        
-        await api.logSteps(dateStr, newTotal);
-        renderApp({ isRouteChange: false, preserveScroll: true });
-        
-        if (current < target && newTotal >= target) {
-            window.showCelebrationModal("Step Goal Reached! 🌟", `Amazing! You've hit your daily goal of ${target.toLocaleString()} steps!`);
-        } else {
-            showToast('Steps updated!');
-        }
-      } catch(e) {
-        showToast(e.message, 'error');
-      }
+        </div>`;
     };
 
     window.handleRenameTaskCategory = async (oldName, newName) => {
