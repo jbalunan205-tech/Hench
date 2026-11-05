@@ -2499,6 +2499,7 @@
         const allWorkouts = await this.getWorkouts();
         const allRoutines = await this.getRoutines();
         const allEvents = await this.getEvents();
+        const allTasks = await this.getTasks();
 
         const stepLog = (db.state.steps_log || []).find(s => s.user_id === u?.id && s.date === targetDate);
         const dailySteps = stepLog ? stepLog.count : 0;
@@ -2833,6 +2834,26 @@
 
         const recentWorkouts = allWorkouts.slice(0, 6);
 
+        // Dashboard tasks should surface the next actionable work, including upcoming
+        // occurrences of recurring tasks, without duplicating the original occurrence.
+        const dashboardTaskHorizon = addDays(todayStr, 14);
+        const activeTasks = allTasks.filter(task => task.status === 'active');
+        const existingTaskOccurrences = new Set(activeTasks.map(task => `${task.id}|${task.due_date || ''}`));
+        const projectedTasks = this.projectRecurringInstancesForRange(allTasks, todayStr, dashboardTaskHorizon)
+          .filter(task => !existingTaskOccurrences.has(`${task.source_task_id || task.id}|${task.due_date || ''}`));
+        const taskUrgency = task => {
+          if (!task.due_date) return 3;
+          if (task.due_date < todayStr) return 0;
+          if (task.due_date === todayStr) return 1;
+          return 2;
+        };
+        const dashboardTasks = [...activeTasks, ...projectedTasks]
+          .sort((a, b) => taskUrgency(a) - taskUrgency(b)
+            || (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31')
+            || getPriorityWeight(b.priority) - getPriorityWeight(a.priority)
+            || String(a.title || '').localeCompare(String(b.title || '')))
+          .slice(0, 5);
+
         return {
           todayStr,
           targetDate,
@@ -2842,11 +2863,13 @@
           allEvents,
           allRoutines,
           allWorkouts,
+          allTasks,
           selectedDateWorkouts,
           selectedDateDuration,
           selectedDateEvents,
           upcomingSessions,
           recentWorkouts,
+          dashboardTasks,
           weekly: {
             mondayStr,
             sundayStr,
@@ -3951,40 +3974,47 @@
           </div>
         </section>
         
-        <section class="animate-fade-in" style="animation-delay:0.2s;" aria-label="Recent Activity and Upcoming Sessions">
+        <section class="animate-fade-in" style="animation-delay:0.2s;" aria-label="Tasks and Upcoming Sessions">
           <div class="activity-split-grid">
             <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
               <div>
                 <div class="card-title">
-                  <span>Recent Activity</span>
-                  <button class="section-link" onclick="window.navigate('/workouts')">View All &rarr;</button>
+                  <span>Tasks</span>
+                  <button class="section-link" onclick="window.navigate('/tasks')">View All &rarr;</button>
                 </div>
-                ${stats.recentWorkouts.length > 0 ? `
+                ${stats.dashboardTasks.length > 0 ? `
                   <div style="display:flex; flex-direction:column; gap:0.6rem;">
-                    ${stats.recentWorkouts.map(w => {
-                      const vol = (Number(w.sets) || 0) * (Number(w.reps) || 0) * (Number(w.weight) || 0);
-                      const perf = [
-                        w.sets && w.reps ? `${w.sets}×${w.reps}` : (w.sets ? `${w.sets} sets` : null),
-                        w.weight !== null && w.weight !== undefined && Number(w.weight) > 0 ? `@ ${w.weight} lbs` : null,
-                        vol > 0 ? `(${Math.round(vol).toLocaleString()} lbs vol)` : null,
-                        w.steps ? `${Number(w.steps).toLocaleString()} steps` : null,
-                        w.duration_minutes ? `${w.duration_minutes} min` : null
-                      ].filter(Boolean).join(' • ') || 'Completed workout';
+                    ${stats.dashboardTasks.map(task => {
+                      const realTaskId = task.source_task_id || task.id;
+                      const occurrenceDate = task.due_date || '';
+                      const isOverdue = task.due_date && task.due_date < todayStr;
+                      const isToday = task.due_date === todayStr;
+                      const dueLabel = task.due_date
+                        ? `${isOverdue ? 'Overdue • ' : ''}${formatReadableDate(task.due_date, todayStr)}${task.due_time ? ` at ${task.due_time}` : ''}`
+                        : 'No due date';
+                      const priorityLabel = task.priority && task.priority !== 'none'
+                        ? `${task.priority.charAt(0).toUpperCase() + task.priority.slice(1)} priority`
+                        : '';
                       return `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:0.75rem 0.95rem; background:var(--bg-input); border:1px solid var(--border-color); border-radius:12px; gap:0.75rem;">
-                          <div style="min-width:0;">
-                            <div style="font-weight:700; font-size:0.92rem; color:var(--text-white); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(w.name)}</div>
-                            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">${w.date} &bull; ${perf}</div>
+                        <div style="display:flex; align-items:center; padding:0.72rem 0.85rem; background:var(--bg-input); border:1px solid ${isOverdue ? 'rgba(239,68,68,0.38)' : (isToday ? 'rgba(0,229,153,0.32)' : 'var(--border-color)')}; border-radius:12px; gap:0.7rem;">
+                          <input type="checkbox" class="custom-checkbox" style="margin:0;" aria-label="Mark ${escapeHtml(task.title)} as complete" onchange="window.handleToggleTaskCheckbox(${realTaskId}, this.checked, '${occurrenceDate}')" />
+                          <div style="min-width:0; flex:1;">
+                            <button type="button" onclick="window.openTaskModal(${realTaskId}, '${occurrenceDate}')" style="display:block; width:100%; padding:0; border:0; background:transparent; color:var(--text-white); cursor:pointer; text-align:left; font:inherit; font-weight:700; font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(task.title)}</button>
+                            <div style="display:flex; gap:0.38rem; flex-wrap:wrap; margin-top:0.3rem; font-size:0.74rem; color:var(--text-muted);">
+                              <span style="color:${isOverdue ? 'var(--color-danger)' : (isToday ? 'var(--color-primary)' : 'var(--text-muted)')};">${dueLabel}</span>
+                              ${task.category ? `<span>&bull; ${escapeHtml(task.category)}</span>` : ''}
+                              ${priorityLabel ? `<span>&bull; ${priorityLabel}</span>` : ''}
+                              ${task.is_projected_occurrence ? '<span>&bull; Recurring</span>' : ''}
+                            </div>
                           </div>
-                          <button class="btn btn-secondary btn-sm" onclick="window.openEditWorkoutModal(${w.id})">Details</button>
                         </div>
                       `;
                     }).join('')}
                   </div>
                 ` : `
                   <div style="padding:1.5rem 1rem; text-align:center; background:var(--bg-input); border-radius:14px; border:1px dashed var(--border-color);">
-                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:0.75rem;">No completed workouts recorded yet.</p>
-                    <button class="btn btn-secondary btn-sm" onclick="window.navigate('/workouts')">Log Your First Workout</button>
+                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:0.75rem;">No open tasks. You’re all caught up.</p>
+                    <button class="btn btn-secondary btn-sm" onclick="window.navigate('/tasks')">Create a Task</button>
                   </div>
                 `}
               </div>
