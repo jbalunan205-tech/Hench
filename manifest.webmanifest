@@ -11,9 +11,9 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "pwa-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "hench-app-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
