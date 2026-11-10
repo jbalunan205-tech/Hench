@@ -663,6 +663,11 @@
     .legal-links-row { display: flex; justify-content: center; align-items: center; gap: 0.85rem; margin-top: 0.75rem; font-size: 0.76rem; color: var(--text-dim); flex-wrap: wrap; }
     .legal-link-btn { background: none; border: none; color: var(--text-muted); font-size: 0.76rem; font-weight: 600; cursor: pointer; padding: 0.15rem 0.3rem; border-radius: 4px; transition: var(--transition); }
     .legal-link-btn:hover { color: var(--color-primary); background: var(--color-primary-dim); }
+    .auth-consent { display: flex; align-items: flex-start; gap: 0.62rem; margin-top: 0.2rem; padding: 0.7rem 0.75rem; border: 1px solid var(--border-color); border-radius: 10px; background: rgba(255,255,255,0.025); }
+    .auth-consent .custom-checkbox { margin-top: 0.08rem; }
+    .auth-consent-copy { color: var(--text-muted); font-size: 0.76rem; line-height: 1.5; }
+    .auth-consent .legal-link-btn { padding: 0; text-decoration: underline; }
+    #auth-dynamic-form button[type="submit"]:disabled { cursor: not-allowed; opacity: 0.48; filter: saturate(0.65); }
     .legal-doc-section { margin-bottom: 1.25rem; }
     .legal-doc-section h4 { font-family: var(--font-display); font-size: 0.98rem; font-weight: 700; color: var(--text-white); margin-bottom: 0.35rem; }
     .legal-doc-section p, .legal-doc-section li { font-size: 0.86rem; color: var(--text-muted); line-height: 1.6; }
@@ -5755,17 +5760,20 @@
                 </button>
               </div>
             </div>
-            <p style="font-size:0.76rem; color:var(--text-muted); line-height:1.45; margin-bottom:0.35rem;">
-              By creating an account, you agree to our <button type="button" class="legal-link-btn" style="padding:0; text-decoration:underline;" onclick="window.openLegalModal('terms')">Terms & Conditions</button> and <button type="button" class="legal-link-btn" style="padding:0; text-decoration:underline;" onclick="window.openLegalModal('privacy')">Privacy Policy</button>.
-            </p>
+            <div class="auth-consent">
+              <input type="checkbox" id="auth-terms-consent" class="custom-checkbox" aria-label="Agree to the Terms and Conditions and Privacy Policy" onchange="window.updateRegisterConsent(this.checked)" />
+              <div class="auth-consent-copy">
+                I agree to the <button type="button" class="legal-link-btn" onclick="window.openLegalModal('terms')">Terms & Conditions</button> and <button type="button" class="legal-link-btn" onclick="window.openLegalModal('privacy')">Privacy Policy</button>.
+              </div>
+            </div>
           ` : ''}
-          <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; margin-top:1rem; font-size:1rem;">${isRegister ? 'Create Account' : 'Sign In'}</button>
+          <button type="submit" class="btn btn-primary" ${isRegister ? 'disabled' : ''} style="width:100%; padding:1rem; margin-top:1rem; font-size:1rem;">${isRegister ? 'Create Account' : 'Sign In'}</button>
           <div style="text-align:center; font-size:0.85rem; color:var(--text-dim); margin-top:1.25rem;">Hench by John Balunan</div>
-          <div class="legal-links-row">
+          ${!isRegister ? `<div class="legal-links-row">
             <button type="button" class="legal-link-btn" onclick="window.openLegalModal('terms')">Terms & Conditions</button>
             <span>&bull;</span>
             <button type="button" class="legal-link-btn" onclick="window.openLegalModal('privacy')">Privacy Policy</button>
-          </div>
+          </div>` : ''}
         </form>
       `;
     }
@@ -5791,6 +5799,11 @@
       document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
       const activeTab = document.getElementById(toRegister ? 'tab-register' : 'tab-login');
       if (activeTab) activeTab.classList.add('active');
+    };
+
+    window.updateRegisterConsent = (isAccepted) => {
+      const submitBtn = document.querySelector('#auth-dynamic-form button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = !isAccepted;
     };
 
     window.openForgotPasswordView = () => {
@@ -5829,6 +5842,7 @@
         try {
           if (isRegister) {
             const e = document.getElementById('auth-email').value;
+            if (!document.getElementById('auth-terms-consent')?.checked) throw new Error('Please agree to the Terms & Conditions and Privacy Policy to create an account.');
             if (p !== document.getElementById('auth-confirm').value) throw new Error("Passwords don't match");
             await api.register(e, p);
           } else {
