@@ -7774,6 +7774,13 @@
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
   const cloud = createClient('https://cpxdahjmqqsafhtwjqhf.supabase.co', 'sb_publishable_mMBZAy4F_3Nt7n3HaLEDrA_NqISlft1');
   const authRedirectUrl = `${window.location.origin}${window.location.pathname}`;
+  const explainAuthEmailError = (error) => {
+    const message = String(error?.message || error || '');
+    if (/over_email_send_rate_limit|email rate limit|too many requests/i.test(message)) {
+      return new Error('HENCH has reached Supabase\'s free email sending limit (2 emails per hour for the whole project). Please wait up to an hour before requesting another confirmation or password-reset email.');
+    }
+    return error;
+  };
   let cloudUser = null;
   const localSave = db.save.bind(db);
   let pendingCloudSave = Promise.resolve();
@@ -7859,7 +7866,7 @@
     if (!cleanName) throw new Error('A username is required.');
     if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
     const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { emailRedirectTo: authRedirectUrl, data: { name: cleanName, show_welcome: true } } });
-    if (error) throw error;
+    if (error) throw explainAuthEmailError(error);
     if (!data.session) throw new Error('Check your email to confirm your account, then log in.');
     await loadCloudState(data.session);
     return { success: true };
@@ -7886,7 +7893,7 @@
       return true;
     }
     const { error } = await cloud.auth.resetPasswordForEmail(targetEmail, { redirectTo: authRedirectUrl });
-    if (error) throw error;
+    if (error) throw explainAuthEmailError(error);
     throw new Error('Password recovery link sent to your email address. Follow the link to complete your reset.');
   };
   api.logout = async () => {
