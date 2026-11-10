@@ -1827,18 +1827,22 @@
         throw new Error('Invalid login credentials. Please check your email or username and password.');
       },
 
-      async register(email, password) {
+      async register(email, password, username) {
         const cleanEmail = (email || '').trim().toLowerCase();
+        const cleanName = (username || '').trim();
         if (!cleanEmail || !cleanEmail.includes('@')) throw new Error('A valid email address is required');
+        if (!cleanName) throw new Error('A username is required');
         if (!password || password.length < 6) throw new Error('Password must be at least 6 characters');
         if (db.state.users.find(u => u.email.toLowerCase() === cleanEmail)) {
           throw new Error('An account with this email already exists');
         }
+        if (db.state.users.find(u => u.name.toLowerCase() === cleanName.toLowerCase())) {
+          throw new Error('This username is already taken');
+        }
         
-        const defaultName = cleanEmail.split('@')[0];
         const user = {
           id: db.state.nextIds.user++,
-          name: defaultName,
+          name: cleanName,
           email: cleanEmail,
           passwordHash: 'hash_' + password,
           created_at: new Date().toISOString(),
@@ -5736,7 +5740,8 @@
       return `
         <form onsubmit="event.preventDefault(); window.handleAuth(${isRegister})">
           ${isRegister 
-            ? `<div class="form-group"><label for="auth-email" style="margin-bottom:0.5rem; display:block;">Email Address</label><input type="email" id="auth-email" autocomplete="email" required /></div>`
+            ? `<div class="form-group"><label for="auth-email" style="margin-bottom:0.5rem; display:block;">Email Address</label><input type="email" id="auth-email" autocomplete="email" required /></div>
+               <div class="form-group"><label for="auth-username" style="margin-bottom:0.5rem; display:block;">Username</label><input type="text" id="auth-username" autocomplete="username" maxlength="40" required /></div>`
             : `<div class="form-group"><label for="auth-identifier" style="margin-bottom:0.5rem; display:block;">Email or Username</label><input type="text" id="auth-identifier" autocomplete="username" required /></div>`
           }
           <div class="form-group">
@@ -5843,9 +5848,10 @@
         try {
           if (isRegister) {
             const e = document.getElementById('auth-email').value;
+            const username = document.getElementById('auth-username').value;
             if (!document.getElementById('auth-terms-consent')?.checked) throw new Error('Please agree to the Terms & Conditions and Privacy Policy to create an account.');
             if (p !== document.getElementById('auth-confirm').value) throw new Error("Passwords don't match");
-            await api.register(e, p);
+            await api.register(e, p, username);
           } else {
             const identifier = document.getElementById('auth-identifier').value;
             await api.login(identifier, p);
@@ -7778,11 +7784,13 @@
     await loadCloudState(data.session);
     return { success: true };
   };
-  api.register = async (email, password) => {
+  api.register = async (email, password, username) => {
     const cleanEmail = (email || '').trim();
+    const cleanName = (username || '').trim();
     if (!cleanEmail.includes('@')) throw new Error('Please register with an email address.');
+    if (!cleanName) throw new Error('A username is required.');
     if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
-    const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { data: { name: cleanEmail.split('@')[0] } } });
+    const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { data: { name: cleanName } } });
     if (error) throw error;
     if (!data.session) throw new Error('Check your email to confirm your account, then log in.');
     await loadCloudState(data.session);
