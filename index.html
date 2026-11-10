@@ -1846,6 +1846,7 @@
           email: cleanEmail,
           passwordHash: 'hash_' + password,
           created_at: new Date().toISOString(),
+          show_welcome: true,
           targets: { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
           task_categories: [...DEFAULT_TASK_CATEGORIES]
         };
@@ -6671,6 +6672,33 @@
       }, 3000);
     };
 
+    window.showWelcomeModalIfNeeded = () => {
+      const user = db.getAuthenticatedUser();
+      if (!user || !user.show_welcome) return;
+
+      // Mark it first so routine dashboard refreshes cannot show it again.
+      user.show_welcome = false;
+      const storedUser = (db.state.users || []).find(item => String(item.id) === String(user.id));
+      if (storedUser) storedUser.show_welcome = false;
+      db.save();
+
+      const root = document.getElementById('modal-root');
+      if (!root) return;
+      root.innerHTML = `
+        <div class="modal-overlay" style="background:radial-gradient(circle at center, rgba(0,229,153,0.12), rgba(0,0,0,0.68) 58%); backdrop-filter:blur(8px);" onclick="closeModal()">
+          <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title" onclick="event.stopPropagation()" style="max-width:430px; text-align:center; padding:2.25rem 1.8rem; border-radius:28px; border:1px solid rgba(0,229,153,0.34); background:linear-gradient(145deg, rgba(20,35,31,0.98), rgba(10,15,14,0.98)); box-shadow:0 0 56px rgba(0,229,153,0.18), 0 24px 60px rgba(0,0,0,0.68);">
+            <div style="width:68px; height:68px; margin:0 auto 1.1rem; border-radius:22px; display:flex; align-items:center; justify-content:center; color:var(--color-primary); background:var(--color-primary-dim); border:1px solid rgba(0,229,153,0.42); box-shadow:0 0 24px rgba(0,229,153,0.18);">
+              ${SVGs.trophy}
+            </div>
+            <div style="font-size:0.72rem; font-weight:800; letter-spacing:0.14em; color:var(--color-primary); margin-bottom:0.5rem;">WELCOME TO THE CREW</div>
+            <h3 class="card-title" id="welcome-modal-title" style="margin:0 0 0.7rem; font-size:1.55rem; font-family:var(--font-display);">Welcome to HENCH, ${escapeHtml(String(user.name || 'lifter'))}!</h3>
+            <p style="color:var(--text-muted); margin:0 auto 1.5rem; max-width:330px; font-size:0.9rem; line-height:1.6;">You&rsquo;re part of the early HENCH crew. Every workout, meal, and task you track helps John Balunan build a stronger, better space for lifters.</p>
+            <button type="button" class="btn btn-primary" style="width:100%; padding:0.9rem;" onclick="closeModal()">Start building momentum</button>
+          </div>
+        </div>
+      `;
+    };
+
     window.setExactSteps = async (val, dateStr) => {
       const targetDate = dateStr || window.dashboardSelectedDate || getLocalDateStr();
       const parsed = parseInt(val, 10);
@@ -7590,6 +7618,8 @@
         requestAnimationFrame(() => scrollMobileHeatmapToActiveMonth());
       }
 
+      window.showWelcomeModalIfNeeded();
+
       if (currentPath === '/nutrition') {
         const mealForm = document.getElementById('meal-form');
         if (mealForm) mealForm.onsubmit = async (e) => {
@@ -7755,7 +7785,8 @@
       email: user.email,
       created_at: user.created_at,
       targets: savedUser?.targets || { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 },
-      task_categories: savedUser?.task_categories || [...DEFAULT_TASK_CATEGORIES]
+      task_categories: savedUser?.task_categories || [...DEFAULT_TASK_CATEGORIES],
+      show_welcome: savedUser?.show_welcome ?? user.user_metadata?.show_welcome ?? false
     };
 
     db.state.users = [cloudUser];
@@ -7790,7 +7821,7 @@
     if (!cleanEmail.includes('@')) throw new Error('Please register with an email address.');
     if (!cleanName) throw new Error('A username is required.');
     if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
-    const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { data: { name: cleanName } } });
+    const { data, error } = await cloud.auth.signUp({ email: cleanEmail, password, options: { data: { name: cleanName, show_welcome: true } } });
     if (error) throw error;
     if (!data.session) throw new Error('Check your email to confirm your account, then log in.');
     await loadCloudState(data.session);
