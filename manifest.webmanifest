@@ -11,8 +11,8 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "hench-app-icon.png",
-      "sizes": "1254x1254",
+      "src": "hench-app-icon-centered.png?v=3",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
     }
