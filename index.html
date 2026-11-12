@@ -2049,6 +2049,22 @@
         db.save();
       },
 
+      async updateSavedFood(id, data) {
+        const u = db.getAuthenticatedUser();
+        const food = (db.state.saved_foods || []).find(item => item.id === id && item.user_id === u?.id);
+        if (!food) throw new Error('Saved food not found');
+        const name = (data.name || '').trim();
+        if (!name) throw new Error('Food name is required');
+        food.name = name;
+        food.servings = parseOptionalNumber(data.servings, true) || 1;
+        food.calories = parseOptionalNumber(data.calories);
+        food.protein = parseOptionalNumber(data.protein, true);
+        food.carbs = parseOptionalNumber(data.carbs, true);
+        food.fat = parseOptionalNumber(data.fat, true);
+        db.save();
+        return food;
+      },
+
       async addSavedFoodToDate(id, date, servings) {
         const u = db.getAuthenticatedUser();
         const food = (db.state.saved_foods || []).find(item => item.id === id && item.user_id === u?.id);
@@ -3434,7 +3450,7 @@
       const observer = new MutationObserver(() => {
         const dialogs = root.querySelectorAll('.modal-dialog');
         dialogs.forEach(dialog => {
-          if (dialog.closest('#celebration-overlay')) return;
+          if (dialog.closest('#celebration-overlay') || dialog.hasAttribute('data-hide-auto-close')) return;
           if (!dialog.querySelector('.modal-close-x')) {
             const closeBtn = document.createElement('button');
             closeBtn.type = 'button';
@@ -6201,15 +6217,12 @@
       const macroText = food => `${food.calories ?? '--'} kcal · ${food.protein ?? '--'}g P · ${food.carbs ?? '--'}g C · ${food.fat ?? '--'}g F`;
       root.innerHTML = `
         <div class="modal-overlay" onclick="closeModal()">
-          <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="saved-foods-title" onclick="event.stopPropagation()">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.4rem;">
-              <div><h3 class="card-title" id="saved-foods-title" style="margin:0;">Saved Foods</h3><p style="color:var(--text-muted); font-size:0.85rem; margin:0.35rem 0 1rem;">Quickly add foods you eat regularly to ${targetDate === getLocalDateStr() ? 'today' : targetDate}.</p></div>
-              <button class="modal-close" type="button" aria-label="Close" onclick="closeModal()">&times;</button>
-            </div>
+          <div class="modal-dialog" data-hide-auto-close role="dialog" aria-modal="true" aria-labelledby="saved-foods-title" onclick="event.stopPropagation()">
+            <div style="margin-bottom:0.4rem;"><h3 class="card-title" id="saved-foods-title" style="margin:0;">Saved Foods</h3><p style="color:var(--text-muted); font-size:0.85rem; margin:0.35rem 0 1rem;">Quickly add foods you eat regularly to ${targetDate === getLocalDateStr() ? 'today' : targetDate}.</p></div>
             ${foods.length ? `<div style="display:grid; gap:0.65rem; max-height:55vh; overflow:auto; padding-right:0.15rem;">${foods.map(food => `
               <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; padding:0.8rem; border:1px solid var(--border-color); border-radius:12px;">
                 <div style="min-width:0;"><div style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(food.name)}</div><div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem;">${food.servings || 1} serving${Number(food.servings || 1) === 1 ? '' : 's'} · ${macroText(food)}</div></div>
-                <div style="display:flex; gap:0.45rem; flex-shrink:0;"><button class="btn btn-primary btn-sm" onclick="window.addSavedFoodToToday(${food.id})">Add</button><button class="btn btn-secondary btn-sm" aria-label="Remove ${escapeHtml(food.name)}" onclick="window.removeSavedFood(${food.id})">Remove</button></div>
+                <div style="display:flex; gap:0.45rem; flex-shrink:0;"><button class="btn btn-primary btn-sm" onclick="window.addSavedFoodToToday(${food.id})">Add</button><button class="btn btn-secondary btn-sm" onclick="window.openEditSavedFoodModal(${food.id})">Edit</button><button class="btn btn-secondary btn-sm" aria-label="Remove ${escapeHtml(food.name)}" onclick="window.removeSavedFood(${food.id})">Remove</button></div>
               </div>`).join('')}</div>` : `<div style="padding:1.25rem 0; text-align:center; color:var(--text-muted);">No saved foods yet. Use <strong>Save Food</strong> on any logged meal to add it here.</div>`}
           </div>
         </div>`;
@@ -6225,6 +6238,45 @@
       } catch (error) {
         showToast(error.message, 'error');
       }
+    };
+
+    window.openEditSavedFoodModal = async (foodId) => {
+      const foods = await api.getSavedFoods();
+      const food = foods.find(item => item.id === foodId);
+      if (!food) return;
+      const root = document.getElementById('modal-root');
+      root.innerHTML = `
+        <div class="modal-overlay" onclick="closeModal()">
+          <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-saved-food-title" onclick="event.stopPropagation()">
+            <h3 class="card-title" id="edit-saved-food-title" style="margin-top:0;">Edit Saved Food</h3>
+            <form id="edit-saved-food-form">
+              <div class="form-row">
+                <div class="form-group" style="flex:2;"><label for="sf-name">Food Name <span class="label-required">*</span></label><input id="sf-name" value="${escapeHtml(food.name)}" required /></div>
+                <div class="form-group"><label for="sf-servings">Servings</label><input type="number" id="sf-servings" min="0.1" step="0.1" value="${food.servings || 1}" required /></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label for="sf-cals">Calories (per serving)</label><input type="number" id="sf-cals" min="0" value="${food.calories ?? ''}" /></div>
+                <div class="form-group"><label for="sf-pro">Protein (g)</label><input type="number" id="sf-pro" min="0" step="0.1" value="${food.protein ?? ''}" /></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label for="sf-carbs">Carbs (g)</label><input type="number" id="sf-carbs" min="0" step="0.1" value="${food.carbs ?? ''}" /></div>
+                <div class="form-group"><label for="sf-fat">Fat (g)</label><input type="number" id="sf-fat" min="0" step="0.1" value="${food.fat ?? ''}" /></div>
+              </div>
+              <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;"><button type="button" class="btn btn-secondary" onclick="window.openSavedFoodsModal()">Cancel</button><button type="submit" class="btn btn-primary">Save Food</button></div>
+            </form>
+          </div>
+        </div>`;
+      document.getElementById('edit-saved-food-form').onsubmit = async event => {
+        event.preventDefault();
+        try {
+          await api.updateSavedFood(foodId, { name: document.getElementById('sf-name').value, servings: document.getElementById('sf-servings').value, calories: document.getElementById('sf-cals').value, protein: document.getElementById('sf-pro').value, carbs: document.getElementById('sf-carbs').value, fat: document.getElementById('sf-fat').value });
+          showToast('Saved food updated.');
+          await renderApp({ isRouteChange: false, preserveScroll: true });
+          window.openSavedFoodsModal();
+        } catch (error) {
+          showToast(error.message, 'error');
+        }
+      };
     };
 
     window.removeSavedFood = async (foodId) => {
