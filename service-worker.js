@@ -1,9 +1,9 @@
-const CACHE_NAME = 'hench-app-shell-v3';
+const CACHE_NAME = 'hench-app-shell-v4';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './hench-app-icon-centered.png',
+  './hench-app-icon-gray.png',
   './hench-full-logo.png'
 ];
 
