@@ -1726,12 +1726,13 @@
       ],
       sessions: [],
       meals: [],
+      saved_foods: [],
       workouts: [],
       routines: [],
       events: [],
       tasks: [],
       steps_log: [],
-      nextIds: { user: 2, session: 2, meal: 1, workout: 1, routine: 1, event: 1, task: 1 }
+      nextIds: { user: 2, session: 2, meal: 1, savedFood: 1, workout: 1, routine: 1, event: 1, task: 1 }
     });
 
     const db = {
@@ -1743,7 +1744,12 @@
             const parsed = JSON.parse(raw);
             this.state = { ...defaultDbState(), ...parsed };
             if (!Array.isArray(this.state.tasks)) this.state.tasks = [];
+            if (!Array.isArray(this.state.saved_foods)) this.state.saved_foods = [];
             if (!this.state.nextIds) this.state.nextIds = defaultDbState().nextIds;
+            if (!this.state.nextIds.savedFood) {
+              const maxSavedFoodId = this.state.saved_foods.reduce((m, food) => Math.max(m, Number(food.id) || 0), 0);
+              this.state.nextIds.savedFood = maxSavedFoodId + 1;
+            }
             if (!this.state.nextIds.task) {
               const maxTaskId = this.state.tasks.reduce((m, t) => Math.max(m, Number(t.id) || 0), 0);
               this.state.nextIds.task = maxTaskId + 1;
@@ -2011,6 +2017,46 @@
         if (!u) throw new Error('Unauthorized');
         db.state.meals = db.state.meals.filter(m => !(m.id === id && m.user_id === u.id));
         db.save();
+      },
+
+      // --- SAVED FOODS ---
+      async getSavedFoods() {
+        const u = db.getAuthenticatedUser();
+        if (!u) return [];
+        return (db.state.saved_foods || []).filter(food => food.user_id === u.id)
+          .sort((a, b) => new Date(b.last_used_at || b.created_at || 0) - new Date(a.last_used_at || a.created_at || 0));
+      },
+
+      async saveFoodFromMeal(mealId) {
+        const u = db.getAuthenticatedUser();
+        const meal = db.state.meals.find(item => item.id === mealId && item.user_id === u?.id);
+        if (!meal) throw new Error('Food log not found');
+        if (!Array.isArray(db.state.saved_foods)) db.state.saved_foods = [];
+        const match = db.state.saved_foods.find(food => food.user_id === u.id && food.name.toLowerCase() === meal.name.toLowerCase()
+          && Number(food.calories) === Number(meal.calories) && Number(food.protein) === Number(meal.protein)
+          && Number(food.carbs) === Number(meal.carbs) && Number(food.fat) === Number(meal.fat));
+        if (match) return match;
+        const food = { id: db.state.nextIds.savedFood++, user_id: u.id, name: meal.name, servings: meal.servings || 1,
+          calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, created_at: new Date().toISOString(), last_used_at: null };
+        db.state.saved_foods.push(food);
+        db.save();
+        return food;
+      },
+
+      async removeSavedFood(id) {
+        const u = db.getAuthenticatedUser();
+        db.state.saved_foods = (db.state.saved_foods || []).filter(food => !(food.id === id && food.user_id === u?.id));
+        db.save();
+      },
+
+      async addSavedFoodToDate(id, date, servings) {
+        const u = db.getAuthenticatedUser();
+        const food = (db.state.saved_foods || []).find(item => item.id === id && item.user_id === u?.id);
+        if (!food) throw new Error('Saved food not found');
+        const meal = await this.createMeal({ ...food, date, servings: servings || food.servings || 1 });
+        food.last_used_at = new Date().toISOString();
+        db.save();
+        return meal;
       },
 
       // --- WORKOUTS ---
@@ -4090,11 +4136,15 @@
 
     async function renderNutrition() {
       const meals = await api.getMeals();
+      const savedFoods = await api.getSavedFoods();
       const defaultDate = window.dashboardSelectedDate || getLocalDateStr();
       return `
         <div class="page-header animate-fade-in">
           <div><h1 class="page-title">Nutrition</h1><p class="page-subtitle">Log meals, adjust serving quantities, and manage daily macronutrient targets.</p></div>
-          <button class="btn btn-secondary btn-sm" onclick="window.openGoalsModal()">Configure Daily Targets</button>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="window.openSavedFoodsModal()">Saved Foods${savedFoods.length ? ` (${savedFoods.length})` : ''}</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.openGoalsModal()">Configure Daily Targets</button>
+          </div>
         </div>
         <div class="card animate-fade-in" style="animation-delay:0.05s;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
@@ -4129,6 +4179,7 @@
           ${meals.length ? meals.map(m => {
             const mult = Number(m.servings) > 0 ? Number(m.servings) : 1;
             const fmt = (val, unit) => (val !== null && val !== undefined) ? `${Math.round(Number(val) * mult * 10) / 10}${unit}` : `-- ${unit}`;
+            const isSaved = savedFoods.some(food => food.name === m.name && String(food.calories) === String(m.calories) && String(food.protein) === String(m.protein) && String(food.carbs) === String(m.carbs) && String(food.fat) === String(m.fat));
             return `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem 0; border-bottom:1px solid var(--border-color); flex-wrap:wrap; gap:0.75rem;">
               <div>
@@ -4142,6 +4193,7 @@
                 </div>
               </div>
               <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-secondary btn-sm" title="${isSaved ? 'Already saved' : 'Save food for quick add'}" onclick="window.handleSaveFood(${m.id})" ${isSaved ? 'disabled' : ''}>${isSaved ? 'Saved' : 'Save Food'}</button>
                 <button class="btn btn-secondary btn-sm" onclick="window.openEditMealModal(${m.id})">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="window.handleDeleteMeal(${m.id})">Remove</button>
               </div>
@@ -6132,6 +6184,60 @@
       });
     };
 
+    window.handleSaveFood = async (mealId) => {
+      try {
+        await api.saveFoodFromMeal(mealId);
+        showToast('Saved to your quick-add foods.');
+        renderApp({ isRouteChange: false, preserveScroll: true });
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
+    };
+
+    window.openSavedFoodsModal = async () => {
+      const foods = await api.getSavedFoods();
+      const targetDate = window.dashboardSelectedDate || getLocalDateStr();
+      const root = document.getElementById('modal-root');
+      const macroText = food => `${food.calories ?? '--'} kcal · ${food.protein ?? '--'}g P · ${food.carbs ?? '--'}g C · ${food.fat ?? '--'}g F`;
+      root.innerHTML = `
+        <div class="modal-overlay" onclick="closeModal()">
+          <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="saved-foods-title" onclick="event.stopPropagation()">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.4rem;">
+              <div><h3 class="card-title" id="saved-foods-title" style="margin:0;">Saved Foods</h3><p style="color:var(--text-muted); font-size:0.85rem; margin:0.35rem 0 1rem;">Quickly add foods you eat regularly to ${targetDate === getLocalDateStr() ? 'today' : targetDate}.</p></div>
+              <button class="modal-close" type="button" aria-label="Close" onclick="closeModal()">&times;</button>
+            </div>
+            ${foods.length ? `<div style="display:grid; gap:0.65rem; max-height:55vh; overflow:auto; padding-right:0.15rem;">${foods.map(food => `
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; padding:0.8rem; border:1px solid var(--border-color); border-radius:12px;">
+                <div style="min-width:0;"><div style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(food.name)}</div><div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem;">${food.servings || 1} serving${Number(food.servings || 1) === 1 ? '' : 's'} · ${macroText(food)}</div></div>
+                <div style="display:flex; gap:0.45rem; flex-shrink:0;"><button class="btn btn-primary btn-sm" onclick="window.addSavedFoodToToday(${food.id})">Add</button><button class="btn btn-secondary btn-sm" aria-label="Remove ${escapeHtml(food.name)}" onclick="window.removeSavedFood(${food.id})">Remove</button></div>
+              </div>`).join('')}</div>` : `<div style="padding:1.25rem 0; text-align:center; color:var(--text-muted);">No saved foods yet. Use <strong>Save Food</strong> on any logged meal to add it here.</div>`}
+          </div>
+        </div>`;
+    };
+
+    window.addSavedFoodToToday = async (foodId) => {
+      try {
+        const date = window.dashboardSelectedDate || getLocalDateStr();
+        await api.addSavedFoodToDate(foodId, date);
+        closeModal();
+        showToast('Saved food added to your log.');
+        await renderApp({ isRouteChange: false, preserveScroll: true });
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
+    };
+
+    window.removeSavedFood = async (foodId) => {
+      try {
+        await api.removeSavedFood(foodId);
+        showToast('Saved food removed.');
+        await renderApp({ isRouteChange: false, preserveScroll: true });
+        window.openSavedFoodsModal();
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
+    };
+
     window.openEditMealModal = async (id) => {
       const meals = await api.getMeals();
       const meal = meals.find(m => m.id === id);
@@ -7805,6 +7911,12 @@
     let savedUser = null;
     if (data?.state) {
       db.state = { ...defaultDbState(), ...data.state };
+      if (!Array.isArray(db.state.saved_foods)) db.state.saved_foods = [];
+      if (!db.state.nextIds) db.state.nextIds = defaultDbState().nextIds;
+      if (!db.state.nextIds.savedFood) {
+        const maxSavedFoodId = db.state.saved_foods.reduce((maxId, food) => Math.max(maxId, Number(food.id) || 0), 0);
+        db.state.nextIds.savedFood = maxSavedFoodId + 1;
+      }
       savedUser = db.state.users?.find(u => String(u.id) === String(user.id)) || db.state.users?.[0];
     } else {
       db.state = defaultDbState();
