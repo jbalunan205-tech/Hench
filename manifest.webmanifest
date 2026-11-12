@@ -11,13 +11,13 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "hench-app-icon-gray.png?v=4",
+      "src": "hench-app-icon-gray.png?v=5",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "hench-app-icon-android.png?v=5",
+      "src": "hench-app-icon-android.png?v=6",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "maskable"
