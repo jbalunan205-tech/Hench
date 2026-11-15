@@ -713,6 +713,9 @@
       border-color: rgba(239, 68, 68, 0.38);
       color: #ffffff;
     }
+    @media (max-width: 520px) {
+      .nutrition-day-totals { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
 
     .badge { display: inline-flex; align-items: center; padding: 0.22rem 0.6rem; border-radius: 7px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; }
     .badge-completed { background: var(--color-primary-dim); color: var(--color-primary); }
@@ -4154,6 +4157,16 @@
       const meals = await api.getMeals();
       const savedFoods = await api.getSavedFoods();
       const defaultDate = window.dashboardSelectedDate || getLocalDateStr();
+      const todayStr = getLocalDateStr();
+      const dailyMeals = meals.filter(meal => meal.date === defaultDate);
+      const dailyTotals = dailyMeals.reduce((totals, meal) => {
+        const servings = Number(meal.servings) > 0 ? Number(meal.servings) : 1;
+        totals.calories += Number(meal.calories || 0) * servings;
+        totals.protein += Number(meal.protein || 0) * servings;
+        totals.carbs += Number(meal.carbs || 0) * servings;
+        totals.fat += Number(meal.fat || 0) * servings;
+        return totals;
+      }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
       return `
         <div class="page-header animate-fade-in">
           <div><h1 class="page-title">Nutrition</h1><p class="page-subtitle">Log meals, adjust serving quantities, and manage daily macronutrient targets.</p></div>
@@ -4190,9 +4203,21 @@
             <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">Log Meal</button>
           </form>
         </div>
-        <div class="card animate-fade-in" style="animation-delay:0.12s;">
-          <div class="card-title">Saved Meal History</div>
-          ${meals.length ? meals.map(m => {
+        <div class="card animate-fade-in" style="animation-delay:0.12s; overflow:hidden;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+            <div><div class="card-title" style="margin:0;">Daily Food Log</div><p style="margin:0.35rem 0 0; color:var(--text-muted); font-size:0.85rem;">Review only the foods logged on this day.</p></div>
+            <button class="btn btn-secondary btn-sm" onclick="window.selectDashboardDate('${todayStr}')" ${defaultDate === todayStr ? 'disabled' : ''}>Today</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:0.65rem; padding:0.8rem; margin-bottom:1rem; border:1px solid var(--border-color); border-radius:14px; background:linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.012)); flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" aria-label="Previous day" onclick="window.changeNutritionHistoryDate(-1)">&larr;</button>
+            <div style="display:flex; flex-direction:column; align-items:center; min-width:min(100%, 215px);"><span style="font-weight:750; font-size:0.95rem;">${escapeHtml(formatReadableDate(defaultDate, todayStr))}</span><input type="date" aria-label="Choose food log date" value="${defaultDate}" max="${todayStr}" onchange="window.selectDashboardDate(this.value)" style="margin-top:0.35rem; width:160px; color-scheme:dark;" /></div>
+            <button class="btn btn-secondary btn-sm" aria-label="Next day" onclick="window.changeNutritionHistoryDate(1)" ${defaultDate >= todayStr ? 'disabled' : ''}>&rarr;</button>
+          </div>
+          <div class="nutrition-day-totals" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:0.6rem; margin-bottom:0.9rem;">
+            ${[['Calories', Math.round(dailyTotals.calories), 'kcal'], ['Protein', Math.round(dailyTotals.protein * 10) / 10, 'g'], ['Carbs', Math.round(dailyTotals.carbs * 10) / 10, 'g'], ['Fat', Math.round(dailyTotals.fat * 10) / 10, 'g']].map(([label, value, unit]) => `<div style="padding:0.65rem; border-radius:11px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06); min-width:0;"><div style="font-size:0.68rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.06em;">${label}</div><div style="font-weight:750; margin-top:0.2rem; white-space:nowrap;">${value}<span style="font-size:.72rem; color:var(--text-muted); margin-left:2px;">${unit}</span></div></div>`).join('')}
+          </div>
+          <div style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.25rem;">${dailyMeals.length} food log${dailyMeals.length === 1 ? '' : 's'} for this day</div>
+          ${dailyMeals.length ? dailyMeals.map(m => {
             const mult = Number(m.servings) > 0 ? Number(m.servings) : 1;
             const fmt = (val, unit) => (val !== null && val !== undefined) ? `${Math.round(Number(val) * mult * 10) / 10}${unit}` : `-- ${unit}`;
             const isSaved = savedFoods.some(food => food.name === m.name && String(food.calories) === String(m.calories) && String(food.protein) === String(m.protein) && String(food.carbs) === String(m.carbs) && String(food.fat) === String(m.fat));
@@ -4214,7 +4239,7 @@
                 <button class="btn btn-danger btn-sm" onclick="window.handleDeleteMeal(${m.id})">Remove</button>
               </div>
             </div>`;
-          }).join('') : '<p style="color:var(--text-dim)">No meals logged yet.</p>'}
+          }).join('') : `<div style="padding:1.5rem 0 0.75rem; text-align:center; color:var(--text-muted);">No food logs for ${escapeHtml(formatReadableDate(defaultDate, todayStr))}. Choose another date or log a meal above.</div>`}
         </div>
       `;
     }
@@ -5981,6 +6006,13 @@
       window.consistencyHalf = parsed.getMonth() < 6 ? 0 : 1;
       savePersistedUIState();
       renderApp({ isRouteChange: false, preserveScroll: true });
+    };
+
+    window.changeNutritionHistoryDate = (delta) => {
+      const current = window.dashboardSelectedDate || getLocalDateStr();
+      const next = addDays(current, delta);
+      if (next > getLocalDateStr()) return;
+      window.selectDashboardDate(next);
     };
 
     window.changeConsistencyPeriod = (delta) => {
