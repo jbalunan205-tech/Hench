@@ -4204,10 +4204,6 @@
                 <div class="form-label-wrap"><label for="m-servings">Servings / Qty</label></div>
                 <input type="number" id="m-servings" min="0.1" step="0.1" value="1" required />
               </div>
-              <div class="form-group" style="flex:1;">
-                <div class="form-label-wrap"><label for="m-date">Date</label></div>
-                <input type="date" id="m-date" value="${defaultDate}" required />
-              </div>
             </div>
             <div class="form-row">
               <div class="form-group"><div class="form-label-wrap"><label for="m-cals">Calories (per serving)</label><span class="label-optional">(Optional)</span></div><input type="number" id="m-cals" min="0"/></div>
@@ -7849,7 +7845,7 @@
           const submitBtn = mealForm.querySelector('button[type="submit"]');
           await withButtonLoading(submitBtn, async () => {
             try {
-              const mealDate = document.getElementById('m-date').value;
+              const mealDate = window.dashboardSelectedDate || getLocalDateStr();
               await api.createMeal({
                 name: document.getElementById('m-name').value,
                 servings: document.getElementById('m-servings').value,
