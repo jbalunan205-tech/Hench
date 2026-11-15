@@ -716,13 +716,26 @@
     @media (max-width: 520px) {
       .nutrition-day-totals { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     }
-    .nutrition-date-rail { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:.35rem; }
-    .nutrition-date-chip { position:relative; min-height:58px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text-muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.18rem; transition:var(--transition); }
+    .nutrition-date-panel { padding:.85rem; margin-bottom:1rem; border:1px solid var(--border-color); border-radius:16px; background:linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.012)); }
+    .nutrition-date-panel-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0 .15rem .75rem; }
+    .nutrition-date-eyebrow { font-size:.68rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; font-weight:700; }
+    .nutrition-date-title { margin-top:.16rem; font-size:1rem; font-weight:780; letter-spacing:-.01em; }
+    .nutrition-history-picker { position:relative; min-height:34px; padding:0 .75rem; border:1px solid rgba(255,255,255,.13); border-radius:999px; display:inline-flex; align-items:center; color:var(--text-muted); background:rgba(255,255,255,.035); font-size:.75rem; font-weight:700; cursor:pointer; overflow:hidden; }
+    .nutrition-history-picker input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+    .nutrition-date-rail { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:.42rem; }
+    .nutrition-date-chip { position:relative; min-height:62px; border:1px solid transparent; border-radius:12px; background:rgba(255,255,255,.018); color:var(--text-muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.22rem; transition:var(--transition); }
     .nutrition-date-chip span { font-size:.66rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em; }
     .nutrition-date-chip strong { font-size:.94rem; line-height:1; }
     .nutrition-date-chip:hover { background:rgba(255,255,255,.06); color:var(--text-white); }
     .nutrition-date-chip.active { background:var(--color-primary); color:#06110c; box-shadow:0 6px 18px rgba(0,229,153,.2); }
     .nutrition-date-chip i { position:absolute; bottom:5px; width:3px; height:3px; border-radius:50%; background:currentColor; }
+    @media (max-width: 520px) {
+      .nutrition-date-panel { padding:.7rem; border-radius:14px; }
+      .nutrition-date-panel-header { padding-bottom:.6rem; }
+      .nutrition-date-chip { min-height:58px; border-radius:10px; }
+      .nutrition-date-chip span { font-size:.6rem; }
+      .nutrition-date-chip strong { font-size:.9rem; }
+    }
 
     .badge { display: inline-flex; align-items: center; padding: 0.22rem 0.6rem; border-radius: 7px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; }
     .badge-completed { background: var(--color-primary-dim); color: var(--color-primary); }
@@ -4166,7 +4179,7 @@
       const defaultDate = window.dashboardSelectedDate || getLocalDateStr();
       const todayStr = getLocalDateStr();
       const dailyMeals = meals.filter(meal => meal.date === defaultDate);
-      const dateRail = Array.from({ length: 7 }, (_, index) => addDays(defaultDate, index - 6));
+      const dateRail = Array.from({ length: 5 }, (_, index) => addDays(defaultDate, index - 4));
       const dailyTotals = dailyMeals.reduce((totals, meal) => {
         const servings = Number(meal.servings) > 0 ? Number(meal.servings) : 1;
         totals.calories += Number(meal.calories || 0) * servings;
@@ -4216,8 +4229,8 @@
             <div><div class="card-title" style="margin:0;">Daily Food Log</div><p style="margin:0.35rem 0 0; color:var(--text-muted); font-size:0.85rem;">Review only the foods logged on this day.</p></div>
             <button class="btn btn-secondary btn-sm" onclick="window.selectDashboardDate('${todayStr}')" ${defaultDate === todayStr ? 'disabled' : ''}>Today</button>
           </div>
-          <div style="padding:0.7rem; margin-bottom:1rem; border:1px solid var(--border-color); border-radius:14px; background:linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.012));">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.1rem 0.2rem 0.7rem;"><div><div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;">Log for</div><div style="font-weight:750; margin-top:0.12rem;">${escapeHtml(formatReadableDate(defaultDate, todayStr))}</div></div><label class="btn btn-secondary btn-sm" style="position:relative; overflow:hidden; cursor:pointer;">Browse history<input type="date" aria-label="Choose food log date" value="${defaultDate}" max="${todayStr}" onchange="window.selectDashboardDate(this.value)" style="position:absolute; inset:0; opacity:0; cursor:pointer;" /></label></div>
+          <div class="nutrition-date-panel">
+            <div class="nutrition-date-panel-header"><div><div class="nutrition-date-eyebrow">Food log</div><div class="nutrition-date-title">${escapeHtml(formatReadableDate(defaultDate, todayStr))}</div></div><label class="nutrition-history-picker" aria-label="Browse food-log history"><span>History</span><input type="date" aria-label="Choose food log date" value="${defaultDate}" max="${todayStr}" onchange="window.selectDashboardDate(this.value)" /></label></div>
             <div class="nutrition-date-rail">${dateRail.map(date => { const parsed = parseLocalDate(date); const isSelected = date === defaultDate; return `<button type="button" class="nutrition-date-chip ${isSelected ? 'active' : ''}" onclick="window.selectDashboardDate('${date}')" aria-label="View food log for ${escapeHtml(formatReadableDate(date, todayStr))}" ${isSelected ? 'aria-current="date"' : ''}><span>${parsed.toLocaleDateString(undefined, { weekday: 'short' })}</span><strong>${parsed.getDate()}</strong>${date === todayStr ? '<i></i>' : ''}</button>`; }).join('')}</div>
           </div>
           <div class="nutrition-day-totals" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:0.6rem; margin-bottom:0.9rem;">
