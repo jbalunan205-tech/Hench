@@ -1304,6 +1304,7 @@
     /* Page-wide responsive refinement */
     @media (min-width: 1100px) {
       .dashboard-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .nutrition-dashboard-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
       .activity-split-grid { gap: 1rem; }
     }
     @media (max-width: 900px) {
@@ -1744,6 +1745,7 @@
             protein: null,
             carbs: null,
             fat: null,
+            fiber: null,
             weekly_workouts: null,
             steps: 10000
           },
@@ -1783,10 +1785,11 @@
             if (!Array.isArray(this.state.steps_log)) this.state.steps_log = [];
             this.state.users.forEach(u => {
               if (!u.targets) {
-                u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
+                u.targets = { calories: null, protein: null, carbs: null, fat: null, fiber: null, weekly_workouts: null, steps: 10000 };
               } else if (u.targets.steps === undefined) {
                 u.targets.steps = 10000;
               }
+              if (u.targets.fiber === undefined) u.targets.fiber = null;
               if (!Array.isArray(u.task_categories) || u.task_categories.length === 0) {
                 u.task_categories = [...DEFAULT_TASK_CATEGORIES];
               }
@@ -1868,7 +1871,7 @@
           passwordHash: 'hash_' + password,
           created_at: new Date().toISOString(),
           show_welcome: true,
-          targets: { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null },
+          targets: { calories: null, protein: null, carbs: null, fat: null, fiber: null, weekly_workouts: null },
           task_categories: [...DEFAULT_TASK_CATEGORIES]
         };
         db.state.users.push(user);
@@ -1927,9 +1930,10 @@
 
       async getUserTargets() {
         const u = db.getAuthenticatedUser();
-        if (!u) return { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
-        if (!u.targets) u.targets = { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 };
+        if (!u) return { calories: null, protein: null, carbs: null, fat: null, fiber: null, weekly_workouts: null, steps: 10000 };
+        if (!u.targets) u.targets = { calories: null, protein: null, carbs: null, fat: null, fiber: null, weekly_workouts: null, steps: 10000 };
         if (u.targets.steps === undefined) u.targets.steps = 10000;
+        if (u.targets.fiber === undefined) u.targets.fiber = null;
         return u.targets;
       },
 
@@ -1941,6 +1945,7 @@
           protein: parseOptionalNumber(newTargets.protein, true),
           carbs: parseOptionalNumber(newTargets.carbs, true),
           fat: parseOptionalNumber(newTargets.fat, true),
+          fiber: parseOptionalNumber(newTargets.fiber, true),
           weekly_workouts: parseOptionalNumber(newTargets.weekly_workouts),
           steps: parseOptionalNumber(newTargets.steps) || 10000
         };
@@ -2716,6 +2721,7 @@
           p: calcMacroCard('protein', 'g', targets.protein),
           cb: calcMacroCard('carbs', 'g', targets.carbs),
           f: calcMacroCard('fat', 'g', targets.fat),
+          fb: calcMacroCard('fiber', 'g', targets.fiber),
           mealCount: dayMeals.length
         };
 
@@ -3887,11 +3893,12 @@
               <button class="section-link" onclick="window.navigate('/nutrition')">Go to Nutrition &rarr;</button>
             </div>
           </div>
-          <div class="dashboard-grid">
+          <div class="dashboard-grid nutrition-dashboard-grid">
             ${renderMacroCard('Calories', stats.macros.c)}
             ${renderMacroCard('Protein', stats.macros.p)}
             ${renderMacroCard('Carbohydrates', stats.macros.cb)}
             ${renderMacroCard('Fat', stats.macros.f)}
+            ${renderMacroCard('Fiber', stats.macros.fb)}
           </div>
         </section>
 
@@ -5681,6 +5688,7 @@
                 Protein: <strong>${targets.protein ? `${targets.protein}g` : 'Not set'}</strong> &bull;
                 Carbs: <strong>${targets.carbs ? `${targets.carbs}g` : 'Not set'}</strong> &bull;
                 Fat: <strong>${targets.fat ? `${targets.fat}g` : 'Not set'}</strong> &bull;
+                Fiber: <strong>${targets.fiber ? `${targets.fiber}g` : 'Not set'}</strong> &bull;
                 Weekly Workouts: <strong>${targets.weekly_workouts ? `${targets.weekly_workouts}/wk` : 'Not set'}</strong>
               </div>
             </div>
@@ -6128,6 +6136,10 @@
                   <label for="g-fat">Daily Fat (g)</label>
                   <input type="number" id="g-fat" min="0" step="0.5" value="${targets.fat !== null ? targets.fat : ''}" />
                 </div>
+                <div class="form-group">
+                  <label for="g-fiber">Daily Fiber (g)</label>
+                  <input type="number" id="g-fiber" min="0" step="0.5" value="${targets.fiber !== null && targets.fiber !== undefined ? targets.fiber : ''}" />
+                </div>
               </div>
               <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-root').innerHTML = ''">Cancel</button>
@@ -6145,6 +6157,7 @@
             protein: document.getElementById('g-pro').value,
             carbs: document.getElementById('g-carbs').value,
             fat: document.getElementById('g-fat').value,
+            fiber: document.getElementById('g-fiber').value,
             weekly_workouts: document.getElementById('g-weekly').value,
             steps: document.getElementById('g-steps').value
           });
@@ -8024,7 +8037,7 @@
       name: savedUser?.name || user.user_metadata?.name || user.email.split('@')[0],
       email: user.email,
       created_at: user.created_at,
-      targets: savedUser?.targets || { calories: null, protein: null, carbs: null, fat: null, weekly_workouts: null, steps: 10000 },
+      targets: { calories: null, protein: null, carbs: null, fat: null, fiber: null, weekly_workouts: null, steps: 10000, ...(savedUser?.targets || {}) },
       task_categories: savedUser?.task_categories || [...DEFAULT_TASK_CATEGORIES],
       show_welcome: savedUser?.show_welcome ?? user.user_metadata?.show_welcome ?? false
     };
