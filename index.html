@@ -2011,6 +2011,7 @@
           protein: parseOptionalNumber(data.protein, true),
           carbs: parseOptionalNumber(data.carbs, true),
           fat: parseOptionalNumber(data.fat, true),
+          fiber: parseOptionalNumber(data.fiber, true),
           date: data.date || getLocalDateStr(),
           created_at: new Date().toISOString()
         };
@@ -2033,6 +2034,7 @@
         meal.protein = parseOptionalNumber(data.protein, true);
         meal.carbs = parseOptionalNumber(data.carbs, true);
         meal.fat = parseOptionalNumber(data.fat, true);
+        meal.fiber = parseOptionalNumber(data.fiber, true);
         if (data.date) meal.date = data.date;
         db.save();
         return meal;
@@ -2060,10 +2062,10 @@
         if (!Array.isArray(db.state.saved_foods)) db.state.saved_foods = [];
         const match = db.state.saved_foods.find(food => food.user_id === u.id && food.name.toLowerCase() === meal.name.toLowerCase()
           && Number(food.calories) === Number(meal.calories) && Number(food.protein) === Number(meal.protein)
-          && Number(food.carbs) === Number(meal.carbs) && Number(food.fat) === Number(meal.fat));
+          && Number(food.carbs) === Number(meal.carbs) && Number(food.fat) === Number(meal.fat) && Number(food.fiber) === Number(meal.fiber));
         if (match) return match;
         const food = { id: db.state.nextIds.savedFood++, user_id: u.id, name: meal.name, servings: meal.servings || 1,
-          calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, created_at: new Date().toISOString(), last_used_at: null };
+          calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat, fiber: meal.fiber, created_at: new Date().toISOString(), last_used_at: null };
         db.state.saved_foods.push(food);
         db.save();
         return food;
@@ -2087,6 +2089,7 @@
         food.protein = parseOptionalNumber(data.protein, true);
         food.carbs = parseOptionalNumber(data.carbs, true);
         food.fat = parseOptionalNumber(data.fat, true);
+        food.fiber = parseOptionalNumber(data.fiber, true);
         db.save();
         return food;
       },
@@ -4210,6 +4213,7 @@
               <div class="form-group"><div class="form-label-wrap"><label for="m-pro">Protein (g)</label><span class="label-optional">(Optional)</span></div><input type="number" id="m-pro" min="0" step="0.1"/></div>
               <div class="form-group"><div class="form-label-wrap"><label for="m-carbs">Carbs (g)</label><span class="label-optional">(Optional)</span></div><input type="number" id="m-carbs" min="0" step="0.1"/></div>
               <div class="form-group"><div class="form-label-wrap"><label for="m-fat">Fat (g)</label><span class="label-optional">(Optional)</span></div><input type="number" id="m-fat" min="0" step="0.1"/></div>
+              <div class="form-group"><div class="form-label-wrap"><label for="m-fiber">Fiber (g)</label><span class="label-optional">(Optional)</span></div><input type="number" id="m-fiber" min="0" step="0.1"/></div>
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">Log Meal</button>
           </form>
@@ -4233,7 +4237,7 @@
                   <span class="badge badge-scheduled">${m.date}</span>
                 </div>
                 <div style="font-size:0.84rem; color:var(--text-muted); margin-top:4px;">
-                  ${fmt(m.calories, ' kcal')} | ${fmt(m.protein, 'g P')} | ${fmt(m.carbs, 'g C')} | ${fmt(m.fat, 'g F')}
+                  ${fmt(m.calories, ' kcal')} | ${fmt(m.protein, 'g P')} | ${fmt(m.carbs, 'g C')} | ${fmt(m.fat, 'g F')} | ${fmt(m.fiber, 'g Fiber')}
                 </div>
               </div>
               <div style="display:flex; gap:0.5rem;">
@@ -6249,7 +6253,7 @@
       const foods = await api.getSavedFoods();
       const targetDate = window.dashboardSelectedDate || getLocalDateStr();
       const root = document.getElementById('modal-root');
-      const macroText = food => `${food.calories ?? '--'} kcal · ${food.protein ?? '--'}g P · ${food.carbs ?? '--'}g C · ${food.fat ?? '--'}g F`;
+      const macroText = food => `${food.calories ?? '--'} kcal · ${food.protein ?? '--'}g P · ${food.carbs ?? '--'}g C · ${food.fat ?? '--'}g F · ${food.fiber ?? '--'}g Fiber`;
       root.innerHTML = `
         <div class="modal-overlay" onclick="closeModal()">
           <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="saved-foods-title" onclick="event.stopPropagation()">
@@ -6296,6 +6300,7 @@
               <div class="form-row">
                 <div class="form-group"><label for="sf-carbs">Carbs (g)</label><input type="number" id="sf-carbs" min="0" step="0.1" value="${food.carbs ?? ''}" /></div>
                 <div class="form-group"><label for="sf-fat">Fat (g)</label><input type="number" id="sf-fat" min="0" step="0.1" value="${food.fat ?? ''}" /></div>
+                <div class="form-group"><label for="sf-fiber">Fiber (g)</label><input type="number" id="sf-fiber" min="0" step="0.1" value="${food.fiber ?? ''}" /></div>
               </div>
               <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;"><button type="button" class="btn btn-secondary" onclick="window.openSavedFoodsModal()">Cancel</button><button type="submit" class="btn btn-primary">Save Food</button></div>
             </form>
@@ -6304,7 +6309,7 @@
       document.getElementById('edit-saved-food-form').onsubmit = async event => {
         event.preventDefault();
         try {
-          await api.updateSavedFood(foodId, { name: document.getElementById('sf-name').value, servings: document.getElementById('sf-servings').value, calories: document.getElementById('sf-cals').value, protein: document.getElementById('sf-pro').value, carbs: document.getElementById('sf-carbs').value, fat: document.getElementById('sf-fat').value });
+          await api.updateSavedFood(foodId, { name: document.getElementById('sf-name').value, servings: document.getElementById('sf-servings').value, calories: document.getElementById('sf-cals').value, protein: document.getElementById('sf-pro').value, carbs: document.getElementById('sf-carbs').value, fat: document.getElementById('sf-fat').value, fiber: document.getElementById('sf-fiber').value });
           showToast('Saved food updated.');
           await renderApp({ isRouteChange: false, preserveScroll: true });
           window.openSavedFoodsModal();
@@ -6356,6 +6361,7 @@
               <div class="form-row">
                 <div class="form-group"><label for="em-carbs">Carbs (g)</label><input type="number" id="em-carbs" min="0" step="0.1" value="${meal.carbs !== null ? meal.carbs : ''}" /></div>
                 <div class="form-group"><label for="em-fat">Fat (g)</label><input type="number" id="em-fat" min="0" step="0.1" value="${meal.fat !== null ? meal.fat : ''}" /></div>
+                <div class="form-group"><label for="em-fiber">Fiber (g)</label><input type="number" id="em-fiber" min="0" step="0.1" value="${meal.fiber ?? ''}" /></div>
               </div>
               <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-root').innerHTML = ''">Cancel</button>
@@ -6375,7 +6381,8 @@
             calories: document.getElementById('em-cals').value,
             protein: document.getElementById('em-pro').value,
             carbs: document.getElementById('em-carbs').value,
-            fat: document.getElementById('em-fat').value
+            fat: document.getElementById('em-fat').value,
+            fiber: document.getElementById('em-fiber').value
           });
           root.innerHTML = '';
           showToast('Meal updated!');
@@ -7853,7 +7860,8 @@
                 calories: document.getElementById('m-cals').value,
                 protein: document.getElementById('m-pro').value,
                 carbs: document.getElementById('m-carbs').value,
-                fat: document.getElementById('m-fat').value
+                fat: document.getElementById('m-fat').value,
+                fiber: document.getElementById('m-fiber').value
               });
               clearRouteFormDraft('/nutrition');
               window.dashboardSelectedDate = mealDate;
